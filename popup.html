@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>جدارات أوتو</title>
+    <link rel="stylesheet" href="styles/popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <span class="logo-icon">🎯</span>
+                <h1>جدارات أوتو</h1>
+            </div>
+            <button class="close-btn" id="closeBtn">×</button>
+        </div>
+
+        <!-- Main Sections -->
+        <div class="main-content">
+            
+            <!-- Control Panel -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">⚡</span>
+                    <h2>لوحة التحكم</h2>
+                </div>
+                
+                <div class="control-buttons">
+                    <button class="btn btn-primary" id="startBtn">
+                        <span class="btn-icon">▶</span>
+                        بدء التشغيل
+                    </button>
+                    <button class="btn btn-secondary" id="pauseBtn" disabled>
+                        <span class="btn-icon">⏸</span>
+                        إيقاف مؤقت
+                    </button>
+                    <button class="btn btn-danger" id="stopBtn" disabled>
+                        <span class="btn-icon">⏹</span>
+                        إيقاف نهائي
+                    </button>
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">⚙</span>
+                    <h2>الإعدادات المتقدمة</h2>
+                    <span class="pro-badge">PRO</span>
+                </div>
+
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label>فترة الانتظار (ثانية)</label>
+                        <div class="input-group">
+                            <input type="range" id="delayRange" min="2" max="10" value="3">
+                            <span id="delayValue">3</span>
+                        </div>
+                    </div>
+
+                    <div class="setting-item">
+                        <label>نمط التشغيل</label>
+                        <select id="modeSelect" class="select-input">
+                            <option value="normal">عادي</option>
+                            <option value="smart">ذكي</option>
+                            <option value="aggressive">سريع</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-item">
+                        <label>صوت التنبيهات</label>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="soundToggle" checked>
+                            <span class="slider"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">📊</span>
+                    <h2>إحصائيات الجلسة</h2>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="appliedCount">0</div>
+                        <div class="stat-label">تم التقديم</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="skippedCount">0</div>
+                        <div class="stat-label">تم التخطي</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalCount">0</div>
+                        <div class="stat-label">إجمالي الوظائف</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Section -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">📈</span>
+                    <h2>التقدم الحالي</h2>
+                </div>
+
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">جاهز للبدء</div>
+                </div>
+
+                <div class="current-job" id="currentJob">
+                    <span class="job-status">في الانتظار...</span>
+                </div>
+            </div>
+
+            <!-- Resume Operations -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">🔄</span>
+                    <h2>استئناف العمليات</h2>
+                </div>
+
+                <div class="resume-buttons">
+                    <button class="btn btn-info" id="resumeBtn" disabled>
+                        <span class="btn-icon">🔄</span>
+                        استكمال من النقطة الأخيرة
+                    </button>
+                    <button class="btn btn-warning" id="restartBtn">
+                        <span class="btn-icon">🔄</span>
+                        البدء من جديد
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span id="statusText">غير متصل</span>
+            </div>
+            <div class="version">v1.0.0</div>
+        </div>
+
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

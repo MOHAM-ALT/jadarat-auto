@@ -1,1 +1,0 @@
-# jadarat-auto
