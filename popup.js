@@ -1,8 +1,9 @@
-// جدارات أوتو - Popup Script
+// جدارات أوتو - Popup Script المُصحح
 class JadaratAutoPopup {
     constructor() {
         this.isRunning = false;
         this.isPaused = false;
+        this.currentTab = null;
         this.stats = {
             applied: 0,
             skipped: 0,
@@ -12,7 +13,7 @@ class JadaratAutoPopup {
         this.initializeElements();
         this.bindEvents();
         this.loadSettings();
-        this.updateStatus();
+        this.checkConnection();
     }
 
     initializeElements() {
@@ -69,6 +70,69 @@ class JadaratAutoPopup {
         });
     }
 
+    async checkConnection() {
+        try {
+            // Get current active tab
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            this.currentTab = tab;
+
+            if (!tab.url.includes('jadarat.sa')) {
+                this.updateStatus('disconnected', 'يرجى الانتقال لموقع جدارات');
+                this.showError('يرجى الانتقال إلى موقع جدارات (jadarat.sa)');
+                this.startBtn.disabled = true;
+                return;
+            }
+
+            // Try to ping content script
+            try {
+                const response = await chrome.tabs.sendMessage(tab.id, { action: 'PING' });
+                if (response && response.status === 'active') {
+                    this.updateStatus('connected', 'متصل - جاهز');
+                    this.startBtn.disabled = false;
+                } else {
+                    throw new Error('No response from content script');
+                }
+            } catch (error) {
+                console.log('Content script not ready, will inject...');
+                await this.injectContentScript();
+            }
+
+        } catch (error) {
+            console.error('Error checking connection:', error);
+            this.updateStatus('disconnected', 'خطأ في الاتصال');
+            this.showError('خطأ في الاتصال مع الصفحة');
+        }
+    }
+
+    async injectContentScript() {
+        try {
+            if (!this.currentTab) return;
+
+            // Inject content script
+            await chrome.scripting.executeScript({
+                target: { tabId: this.currentTab.id },
+                files: ['content.js']
+            });
+
+            // Wait a bit for initialization
+            await this.delay(1000);
+
+            // Try to ping again
+            const response = await chrome.tabs.sendMessage(this.currentTab.id, { action: 'PING' });
+            if (response && response.status === 'active') {
+                this.updateStatus('connected', 'متصل - جاهز');
+                this.startBtn.disabled = false;
+            } else {
+                throw new Error('Content script injection failed');
+            }
+
+        } catch (error) {
+            console.error('Error injecting content script:', error);
+            this.updateStatus('disconnected', 'فشل في تحميل المحتوى');
+            this.showError('فشل في تحميل المحتوى. تحقق من الأذونات.');
+        }
+    }
+
     async loadSettings() {
         try {
             const result = await chrome.storage.local.get([
@@ -123,11 +187,14 @@ class JadaratAutoPopup {
 
     async startAutomation() {
         try {
-            // Check if we're on the correct website
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            
-            if (!tab.url.includes('jadarat.sa')) {
+            if (!this.currentTab || !this.currentTab.url.includes('jadarat.sa')) {
                 this.showError('يرجى التأكد من أنك على موقع جدارات الصحيح');
+                return;
+            }
+
+            // Check if on correct page
+            if (!this.currentTab.url.includes('ExploreJobs') && !this.currentTab.url.includes('JobTab=1')) {
+                this.showError('يرجى الانتقال إلى صفحة البحث عن الوظائف');
                 return;
             }
 
@@ -142,23 +209,36 @@ class JadaratAutoPopup {
             this.updateStatus('connected', 'متصل - يعمل');
             this.setProgress(0, 'بدء التشغيل...');
 
-            // Send message to content script to start
+            // Get settings
             const settings = {
                 delayTime: parseInt(this.delayRange.value),
                 mode: this.modeSelect.value,
                 soundEnabled: this.soundToggle.checked
             };
 
-            chrome.tabs.sendMessage(tab.id, {
-                action: 'START_AUTOMATION',
-                settings: settings
-            });
+            // Send message to content script with error handling
+            try {
+                const response = await chrome.tabs.sendMessage(this.currentTab.id, {
+                    action: 'START_AUTOMATION',
+                    settings: settings
+                });
 
-            this.playSound('start');
+                if (!response || !response.success) {
+                    throw new Error('Failed to start automation');
+                }
+
+                this.playSound('start');
+
+            } catch (error) {
+                console.error('Error starting automation:', error);
+                this.showError('فشل في بدء التشغيل. جرب إعادة تحميل الصفحة.');
+                await this.stopAutomation();
+            }
 
         } catch (error) {
-            console.error('Error starting automation:', error);
+            console.error('Error in startAutomation:', error);
             this.showError('حدث خطأ أثناء بدء التشغيل');
+            await this.stopAutomation();
         }
     }
 
@@ -171,8 +251,9 @@ class JadaratAutoPopup {
         this.updateStatus('connected', 'متصل - متوقف مؤقتاً');
         
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            chrome.tabs.sendMessage(tab.id, { action: 'PAUSE_AUTOMATION' });
+            if (this.currentTab) {
+                await chrome.tabs.sendMessage(this.currentTab.id, { action: 'PAUSE_AUTOMATION' });
+            }
         } catch (error) {
             console.error('Error sending pause message:', error);
         }
@@ -189,13 +270,14 @@ class JadaratAutoPopup {
         this.pauseBtn.disabled = true;
         this.stopBtn.disabled = true;
         
-        this.updateStatus('disconnected', 'غير متصل');
+        this.updateStatus('connected', 'متصل - جاهز');
         this.setProgress(0, 'تم الإيقاف');
         this.currentJob.innerHTML = '<span class="job-status">تم الإيقاف</span>';
 
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            chrome.tabs.sendMessage(tab.id, { action: 'STOP_AUTOMATION' });
+            if (this.currentTab) {
+                await chrome.tabs.sendMessage(this.currentTab.id, { action: 'STOP_AUTOMATION' });
+            }
         } catch (error) {
             console.error('Error sending stop message:', error);
         }
@@ -208,7 +290,7 @@ class JadaratAutoPopup {
             const result = await chrome.storage.local.get(['lastPosition']);
             
             if (result.lastPosition) {
-                this.startAutomation();
+                await this.startAutomation();
                 this.resumeBtn.disabled = true;
             }
         } catch (error) {
@@ -226,10 +308,11 @@ class JadaratAutoPopup {
             this.updateStats();
             await this.saveSettings();
             
-            // Restart
+            // Restart if running
             if (this.isRunning) {
                 await this.stopAutomation();
-                setTimeout(() => this.startAutomation(), 1000);
+                await this.delay(1000);
+                await this.startAutomation();
             }
             
             this.resumeBtn.disabled = true;
@@ -334,7 +417,7 @@ class JadaratAutoPopup {
         this.pauseBtn.disabled = true;
         this.stopBtn.disabled = true;
         
-        this.updateStatus('disconnected', 'مكتمل');
+        this.updateStatus('connected', 'مكتمل');
         this.setProgress(100, 'تم الانتهاء من جميع الوظائف');
         this.currentJob.innerHTML = '<span class="job-status" style="color: #00ff88">تم الانتهاء بنجاح!</span>';
         
@@ -343,9 +426,14 @@ class JadaratAutoPopup {
     }
 
     onAutomationError(error) {
-        this.updateStatus('disconnected', 'خطأ');
+        this.updateStatus('connected', 'خطأ');
         this.currentJob.innerHTML = `<span class="job-status" style="color: #ff4545">خطأ: ${error}</span>`;
         this.playSound('error');
+        
+        // Reset buttons
+        this.startBtn.disabled = false;
+        this.pauseBtn.disabled = true;
+        this.stopBtn.disabled = true;
     }
 
     async savePosition(position) {
@@ -413,9 +501,17 @@ class JadaratAutoPopup {
         }
         this.playSound('error');
     }
+
+    async delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
 }
 
 // Initialize the popup when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new JadaratAutoPopup();
+    try {
+        new JadaratAutoPopup();
+    } catch (error) {
+        console.error('Error initializing popup:', error);
+    }
 });

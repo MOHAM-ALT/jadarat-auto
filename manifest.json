@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "جدارات أوتو",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "أتمتة التقديم على الوظائف في موقع جدارات بنقرة واحدة",
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "notifications"
   ],
   "host_permissions": [
     "https://jadarat.sa/*"
@@ -34,5 +35,11 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*.png"],
+      "matches": ["https://jadarat.sa/*"]
+    }
+  ]
 }
