@@ -140,32 +140,35 @@
                 switch (message.action) {
                     case 'PING':
                         sendResponse({ status: 'active' });
-                        break;
+                        return true;
                         
                     case 'START_AUTOMATION':
                         this.settings = message.settings;
-                        setTimeout(async () => {
-                            await this.startAutomation();
+                        // تنفيذ الأتمتة بدون انتظار لتجنب timeout
+                        setTimeout(() => {
+                            this.startAutomation();
                         }, 100);
                         sendResponse({ success: true });
-                        break;
+                        return true;
                         
                     case 'PAUSE_AUTOMATION':
                         this.pauseAutomation();
                         sendResponse({ success: true });
-                        break;
+                        return true;
                         
                     case 'STOP_AUTOMATION':
                         this.stopAutomation();
                         sendResponse({ success: true });
-                        break;
+                        return true;
                         
                     default:
                         sendResponse({ success: false, error: 'Unknown action' });
+                        return true;
                 }
             } catch (error) {
                 console.error('جدارات أوتو: خطأ في معالجة الرسالة:', error);
                 sendResponse({ success: false, error: error.message });
+                return true;
             }
         }
 
@@ -888,11 +891,8 @@
                     ...data
                 };
                 
-                chrome.runtime.sendMessage(message, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error('جدارات أوتو: خطأ في إرسال الرسالة:', chrome.runtime.lastError);
-                    }
-                });
+                // إرسال الرسالة بدون callback لتجنب المشاكل
+                chrome.runtime.sendMessage(message);
             } catch (error) {
                 console.error('جدارات أوتو: خطأ في إرسال الرسالة:', error);
             }
