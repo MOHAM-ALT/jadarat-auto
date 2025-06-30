@@ -402,7 +402,7 @@
                 jadaratAutoContent = new JadaratAutoContent();
             }
         } catch (error) {
-            console.error('خطأ في التهيئة:', error);
+            console.error('خطأ في الته    يئة:', error);
         }
     }
 
@@ -411,5 +411,7 @@
     } else {
         init();
     }
+
+
 
 })();
