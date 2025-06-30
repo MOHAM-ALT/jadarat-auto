@@ -1,4 +1,4 @@
-
+// جدارات أوتو - Content Script المُصحح بناءً على HTML الحقيقي
 (function() {
     'use strict';
     
@@ -143,15 +143,6 @@
         async startAutomation() {
             console.log('جدارات أوتو: بدء الأتمتة');
             
-            // التحقق من تسجيل الدخول أولاً
-            const isLoggedIn = this.checkLoginStatus();
-            if (!isLoggedIn) {
-                this.sendMessage('AUTOMATION_ERROR', { 
-                    error: 'يجب تسجيل الدخول أولاً للمتابعة' 
-                });
-                return;
-            }
-            
             if (this.pageType !== 'jobList') {
                 this.sendMessage('AUTOMATION_ERROR', { 
                     error: 'يجب أن تكون في صفحة البحث عن الوظائف' 
@@ -192,16 +183,6 @@
             try {
                 console.log('جدارات أوتو: معالجة الصفحة الحالية');
                 
-                // التحقق من تسجيل الدخول بشكل دوري
-                const isLoggedIn = this.checkLoginStatus();
-                if (!isLoggedIn) {
-                    this.sendMessage('AUTOMATION_ERROR', { 
-                        error: 'تم تسجيل الخروج تلقائياً - يرجى تسجيل الدخول مرة أخرى' 
-                    });
-                    this.stopAutomation();
-                    return;
-                }
-                
                 await this.delay(2000);
                 
                 const jobCards = this.getJobCards();
@@ -224,15 +205,6 @@
                 for (let i = this.currentJobIndex; i < jobCards.length; i++) {
                     if (!this.isRunning || this.isPaused) {
                         this.saveCurrentPosition();
-                        return;
-                    }
-
-                    // فحص تسجيل الدخول قبل كل وظيفة
-                    if (!this.checkLoginStatus()) {
-                        this.sendMessage('AUTOMATION_ERROR', { 
-                            error: 'تم تسجيل الخروج أثناء المعالجة - توقف العمل' 
-                        });
-                        this.stopAutomation();
                         return;
                     }
 
@@ -706,110 +678,6 @@
             } catch (error) {
                 console.error('جدارات أوتو: خطأ في إرسال الرسالة:', error);
             }
-        }
-
-        checkLoginStatus() {
-            console.log('جدارات أوتو: فحص حالة تسجيل الدخول');
-            
-            // الطريقة الأكثر دقة: البحث عن زر تسجيل الدخول المحدد
-            const specificLoginButton = document.querySelector('button[data-button].btn:contains("تسجيل الدخول")');
-            
-            // طرق إضافية للبحث عن زر تسجيل الدخول
-            const loginSelectors = [
-                'button[data-button]:contains("تسجيل الدخول")',
-                'button.btn:contains("تسجيل الدخول")',
-                'button[class*="margin-login-none"]:contains("تسجيل الدخول")',
-                'a:contains("تسجيل الدخول")',
-                '[href*="login"]',
-                '[href*="signin"]'
-            ];
-            
-            let loginButton = null;
-            
-            // البحث باستخدام دالة مساعدة للنصوص
-            for (const selector of loginSelectors) {
-                if (selector.includes(':contains(')) {
-                    const baseSelector = selector.split(':contains(')[0];
-                    const searchText = selector.match(/\("([^"]+)"\)/)?.[1];
-                    if (searchText) {
-                        loginButton = this.getElementByText(baseSelector, searchText);
-                        if (loginButton) break;
-                    }
-                } else {
-                    loginButton = document.querySelector(selector);
-                    if (loginButton) break;
-                }
-            }
-            
-            // إذا وجدنا زر تسجيل دخول وهو مرئي = المستخدم خارج
-            if (loginButton && loginButton.offsetWidth > 0 && loginButton.offsetHeight > 0) {
-                console.log('جدارات أوتو: ⚠️  المستخدم غير مسجل دخول - تم العثور على زر تسجيل الدخول');
-                console.log('زر تسجيل الدخول:', loginButton);
-                return false;
-            }
-            
-            // فحص إضافي: البحث عن نص "تسجيل الدخول" في الشريط العلوي
-            const headerElements = document.querySelectorAll('header, nav, .header, .navbar, [class*="header"], [class*="nav"]');
-            for (const header of headerElements) {
-                if (header.textContent.includes('تسجيل الدخول') && 
-                    !header.textContent.includes('تسجيل الخروج')) {
-                    console.log('جدارات أوتو: ⚠️  المستخدم غير مسجل دخول - نص في الشريط العلوي');
-                    return false;
-                }
-            }
-            
-            // فحص عكسي: البحث عن عناصر المستخدم المسجل
-            const userIndicators = [
-                '[class*="profile"]',
-                '[class*="user"]', 
-                '[class*="account"]',
-                '[href*="profile"]',
-                '[href*="account"]',
-                'button:contains("تسجيل الخروج")',
-                'a:contains("تسجيل الخروج")',
-                '[class*="logout"]'
-            ];
-            
-            let hasUserElements = false;
-            for (const selector of userIndicators) {
-                if (selector.includes(':contains(')) {
-                    const baseSelector = selector.split(':contains(')[0];
-                    const searchText = selector.match(/\("([^"]+)"\)/)?.[1];
-                    if (searchText) {
-                        const element = this.getElementByText(baseSelector, searchText);
-                        if (element && element.offsetWidth > 0) {
-                            hasUserElements = true;
-                            break;
-                        }
-                    }
-                } else {
-                    const elements = document.querySelectorAll(selector);
-                    if (elements.length > 0 && Array.from(elements).some(el => el.offsetWidth > 0)) {
-                        hasUserElements = true;
-                        break;
-                    }
-                }
-            }
-            
-            // إذا لم نجد عناصر المستخدم ووجدنا نص تسجيل دخول
-            if (!hasUserElements && document.body.textContent.includes('تسجيل الدخول')) {
-                console.log('جدارات أوتو: ⚠️  المستخدم غير مسجل دخول - لا توجد عناصر المستخدم');
-                return false;
-            }
-            
-            console.log('جدارات أوتو: ✅ المستخدم مسجل دخول');
-            return true;
-        }
-
-        // دالة مساعدة للبحث عن النصوص (contains selector)
-        getElementByText(selector, text) {
-            const elements = document.querySelectorAll(selector);
-            for (const element of elements) {
-                if (element.textContent.includes(text)) {
-                    return element;
-                }
-            }
-            return null;
         }
     }
 
