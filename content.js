@@ -37,7 +37,7 @@
         initializeListeners() {
             chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 this.handleMessage(message, sendResponse);
-                return true;
+                return true; // Keep the message channel open for async response
             });
         }
 
@@ -144,7 +144,9 @@
                         
                     case 'START_AUTOMATION':
                         this.settings = message.settings;
-                        await this.startAutomation();
+                        setTimeout(async () => {
+                            await this.startAutomation();
+                        }, 100);
                         sendResponse({ success: true });
                         break;
                         
@@ -157,6 +159,9 @@
                         this.stopAutomation();
                         sendResponse({ success: true });
                         break;
+                        
+                    default:
+                        sendResponse({ success: false, error: 'Unknown action' });
                 }
             } catch (error) {
                 console.error('جدارات أوتو: خطأ في معالجة الرسالة:', error);
@@ -915,11 +920,15 @@
 
         sendMessage(action, data = {}) {
             try {
-                chrome.runtime.sendMessage({
+                const message = {
                     action: action,
                     ...data
-                }).catch(error => {
-                    console.error('جدارات أوتو: خطأ في إرسال الرسالة:', error);
+                };
+                
+                chrome.runtime.sendMessage(message, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('جدارات أوتو: خطأ في إرسال الرسالة:', chrome.runtime.lastError);
+                    }
                 });
             } catch (error) {
                 console.error('جدارات أوتو: خطأ في إرسال الرسالة:', error);
