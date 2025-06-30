@@ -20,26 +20,35 @@
         }
 
         initializeListeners() {
-            chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-                console.log('جدارات أوتو: رسالة مستلمة:', message);
-                
-                if (message.action === 'PING') {
-                    sendResponse({ status: 'active' });
-                    return;
-                }
-                
-                if (message.action === 'START_AUTOMATION') {
-                    this.startAutomation();
+            try {
+                chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+                    console.log('جدارات أوتو: رسالة مستلمة:', message);
+                    
+                    if (message.action === 'PING') {
+                        sendResponse({ status: 'active' });
+                        return true;
+                    }
+                    
+                    if (message.action === 'START_AUTOMATION') {
+                        setTimeout(() => {
+                            this.startAutomation();
+                        }, 100);
+                        sendResponse({ success: true });
+                        return true;
+                    }
+                    
+                    if (message.action === 'STOP_AUTOMATION') {
+                        this.stopAutomation();
+                        sendResponse({ success: true });
+                        return true;
+                    }
+                    
                     sendResponse({ success: true });
-                    return;
-                }
-                
-                if (message.action === 'STOP_AUTOMATION') {
-                    this.stopAutomation();
-                    sendResponse({ success: true });
-                    return;
-                }
-            });
+                    return true;
+                });
+            } catch (error) {
+                console.error('خطأ في المستمع:', error);
+            }
         }
 
         addVisualIndicator() {
@@ -387,11 +396,14 @@
         }
 
         sendMessage(action, data = {}) {
-            try {
-                chrome.runtime.sendMessage({ action, ...data });
-            } catch (error) {
-                console.error('خطأ في الرسالة:', error);
-            }
+            // إرسال بسيط بدون callback لتجنب الأخطاء
+            setTimeout(() => {
+                try {
+                    chrome.runtime.sendMessage({ action, ...data });
+                } catch (e) {
+                    // تجاهل الأخطاء
+                }
+            }, 10);
         }
     }
 
