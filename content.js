@@ -1,4 +1,4 @@
-// جدارات أوتو - Content Script المُصحح والمحسن (الإصدار العملي)
+// جدارات أوتو - النسخة 6 المحسنة العاملة مع الإصلاحات
 (function() {
     'use strict';
     
@@ -231,7 +231,7 @@
                     return;
                 }
                 
-                // انتظار تحميل صفحة الوظائف (4 ثواني)
+                // انتظار تحميل صفحة الوظائف (4 ثواني كما طلبت)
                 await this.delay(4000);
                 
                 const jobCards = this.getJobCards();
@@ -240,8 +240,15 @@
                 console.log(`جدارات أوتو: تم العثور على ${this.totalJobs} وظيفة`);
 
                 if (this.totalJobs === 0) {
+                    // تشخيص إضافي عند عدم العثور على وظائف
+                    console.log('=== تشخيص مشكلة عدم العثور على الوظائف ===');
+                    console.log('عدد روابط JobDetails:', document.querySelectorAll('a[href*="JobDetails"]').length);
+                    console.log('عدد data-link:', document.querySelectorAll('a[data-link]').length);
+                    console.log('عدد data-list:', document.querySelectorAll('[data-list]').length);
+                    console.log('وجود pagination:', !!document.querySelector('.pagination'));
+                    
                     this.sendMessage('AUTOMATION_ERROR', { 
-                        error: 'لم يتم العثور على وظائف في هذه الصفحة' 
+                        error: 'لم يتم العثور على وظائف في هذه الصفحة - تحقق من أنك في صفحة قائمة الوظائف' 
                     });
                     return;
                 }
@@ -334,7 +341,6 @@
         }
 
         findJobContainer(link) {
-            // البحث عن الحاوي الأب الذي يحتوي على معلومات الوظيفة الكاملة
             let container = link;
             
             for (let i = 0; i < 10; i++) {
@@ -342,7 +348,6 @@
                 
                 container = container.parentElement;
                 
-                // التحقق من أن الحاوي يحتوي على معلومات الوظيفة
                 const hasJobInfo = container.textContent.includes('المدينة') && 
                                  container.textContent.includes('تاريخ النشر') && 
                                  container.textContent.includes('الوظائف المتاحة');
@@ -352,13 +357,10 @@
                 }
             }
             
-            // إذا لم نجد، نعيد العنصر الأب المباشر
             return link.closest('[data-container]') || link.parentElement;
         }
 
         checkIfAlreadyApplied(container) {
-            // البحث عن مؤشرات التقديم المسبق بناءً على HTML الحقيقي
-            
             // 1. البحث عن أيقونة "تم التقدم"
             const tickIcon = container.querySelector('img[src*="tickcircle.svg"]');
             if (tickIcon) {
@@ -371,17 +373,6 @@
             if (appliedText && appliedText.textContent.includes('تم التقدم')) {
                 console.log('جدارات أوتو: تم العثور على نص "تم التقدم"');
                 return true;
-            }
-            
-            // 3. فحص النص العام للحاوي
-            const containerText = container.textContent;
-            const appliedIndicators = ['تم التقدم', 'تم التقديم', 'مُقدم عليها'];
-            
-            for (const indicator of appliedIndicators) {
-                if (containerText.includes(indicator)) {
-                    console.log(`جدارات أوتو: تم العثور على مؤشر: ${indicator}`);
-                    return true;
-                }
             }
             
             return false;
@@ -404,7 +395,7 @@
                 console.log('جدارات أوتو: النقر على رابط الوظيفة');
                 this.clickElement(jobCard.link);
                 
-                // انتظار تحميل صفحة التفاصيل (3 ثواني)
+                // انتظار تحميل صفحة التفاصيل (3 ثواني كما طلبت)
                 await this.waitForNavigation();
                 await this.delay(3000);
                 
@@ -482,7 +473,6 @@
             
             await this.delay(1500);
             
-            // البحث عن النوافذ المنبثقة
             const popupSelectors = [
                 '[role="dialog"]',
                 '.modal-dialog',
@@ -553,7 +543,6 @@
         findSubmitButton() {
             console.log('جدارات أوتو: البحث المكثف عن زر التقديم...');
             
-            // البحث باستخدام النصوص
             const allButtons = document.querySelectorAll('button, input[type="submit"], input[type="button"], a');
             
             console.log(`جدارات أوتو: فحص ${allButtons.length} عنصر قابل للنقر`);
@@ -580,19 +569,11 @@
                 
                 if (isSubmitButton && isVisible && isEnabled) {
                     console.log(`جدارات أوتو: ✅ تم العثور على زر التقديم: "${text}"`);
-                    console.log('العنصر:', button);
-                    console.log('الفئات:', button.className);
-                    console.log('النوع:', button.type);
                     
                     // تمييز الزر بصرياً للتأكيد
                     button.style.cssText += 'border: 3px solid #00ff00 !important; background: rgba(0, 255, 0, 0.2) !important;';
                     
                     return button;
-                }
-                
-                // تسجيل الأزرار المرشحة لأغراض التشخيص
-                if (isVisible && isEnabled && (text.length > 2 && text.length < 50)) {
-                    console.log(`جدارات أوتو: زر مكتشف: "${text}" - مرئي: ${isVisible} - مفعل: ${isEnabled}`);
                 }
             }
             
@@ -630,7 +611,7 @@
                 if (!submitButton) {
                     console.log('جدارات أوتو: ❌ فشل في العثور على زر التقديم نهائياً');
                     
-                    // تشخيص إضافي: طباعة جميع الأزرار الموجودة
+                    // تشخيص إضافي
                     console.log('=== تشخيص الأزرار الموجودة ===');
                     const allButtons = document.querySelectorAll('button, input[type="submit"], a');
                     allButtons.forEach((btn, index) => {
@@ -774,7 +755,6 @@
         async goToNextPage() {
             console.log('جدارات أوتو: البحث عن الصفحة التالية');
             
-            // البحث عن زر الصفحة التالية بناءً على HTML الحقيقي
             const nextButton = document.querySelector('button[aria-label="go to next page"]:not([disabled])');
             
             if (nextButton) {
@@ -889,29 +869,12 @@
             console.log('جدارات أوتو: فحص حالة تسجيل الدخول');
             
             // البحث عن زر تسجيل الدخول بطرق متعددة
-            const loginSelectors = [
-                'button:contains("تسجيل الدخول")',
-                'a:contains("تسجيل الدخول")',
-                'button[class*="margin-login-none"]',
-                '[href*="login"]',
-                '[href*="signin"]'
-            ];
-            
-            let loginButton = null;
-            
-            // البحث باستخدام دالة مساعدة للنصوص
             const allButtons = document.querySelectorAll('button, a');
             for (const btn of allButtons) {
                 if (btn.textContent.includes('تسجيل الدخول') && btn.offsetWidth > 0) {
-                    loginButton = btn;
-                    break;
+                    console.log('جدارات أوتو: ⚠️  المستخدم غير مسجل دخول - تم العثور على زر تسجيل الدخول');
+                    return false;
                 }
-            }
-            
-            // إذا وجدنا زر تسجيل دخول وهو مرئي = المستخدم خارج
-            if (loginButton) {
-                console.log('جدارات أوتو: ⚠️  المستخدم غير مسجل دخول - تم العثور على زر تسجيل الدخول');
-                return false;
             }
             
             console.log('جدارات أوتو: ✅ المستخدم مسجل دخول');
@@ -954,7 +917,7 @@
         try {
             if (!jadaratAutoContent) {
                 jadaratAutoContent = new JadaratAutoContent();
-                console.log('جدارات أوتو: تم تهيئة المحتوى بنجاح - الإصدار العملي المحسن');
+                console.log('جدارات أوتو: تم تهيئة المحتوى بنجاح - النسخة 6 المحسنة');
             }
         } catch (error) {
             console.error('جدارات أوتو: خطأ في التهيئة:', error);
