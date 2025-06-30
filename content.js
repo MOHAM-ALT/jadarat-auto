@@ -177,36 +177,69 @@
             
             // استخدام أفضل طريقة
             let jobLinks = [];
-            if (method1.length > 0) jobLinks = method1;
-            else if (method2.length > 0) jobLinks = method2;
-            else if (method3.length > 0) jobLinks = method3;
-            else if (method4.length > 0) jobLinks = method4;
+            if (method1.length > 0) {
+                jobLinks = method1;
+                console.log('✅ استخدام الطريقة 1 (data-link)');
+            } else if (method2.length > 0) {
+                jobLinks = method2;
+                console.log('✅ استخدام الطريقة 2 (href JobDetails)');
+            } else if (method3.length > 0) {
+                jobLinks = method3;
+                console.log('✅ استخدام الطريقة 3 (JobTab=2)');
+            } else if (method4.length > 0) {
+                jobLinks = method4;
+                console.log('✅ استخدام الطريقة 4 (Param=)');
+            }
             
-            console.log(`✅ استخدام الطريقة التي وجدت ${jobLinks.length} وظيفة`);
+            console.log(`🔍 فحص ${jobLinks.length} رابط وظيفة...`);
             
-            for (const link of jobLinks) {
+            for (let i = 0; i < jobLinks.length; i++) {
+                const link = jobLinks[i];
+                
                 // استخراج عنوان الوظيفة
                 let title = 'وظيفة غير محددة';
                 
-                // البحث عن العنوان في العنصر نفسه
-                const titleInLink = link.textContent.trim();
-                if (titleInLink && titleInLink.length > 5 && titleInLink.length < 100) {
-                    title = titleInLink;
-                }
-                
-                // البحث عن العنوان في العناصر الفرعية
-                const titleElement = link.querySelector('span, h1, h2, h3, h4, h5, h6');
+                // البحث عن العنوان بطرق متعددة
+                const titleElement = link.querySelector('span.heading4, .heading4, span, h1, h2, h3, h4, h5, h6');
                 if (titleElement && titleElement.textContent.trim()) {
                     title = titleElement.textContent.trim();
+                } else {
+                    const linkText = link.textContent.trim();
+                    if (linkText && linkText.length > 5 && linkText.length < 100) {
+                        title = linkText;
+                    }
                 }
                 
-                // التحقق من عدم التقديم المسبق
-                const parent = link.closest('[data-container]') || link.parentElement;
-                const isApplied = parent && (
-                    parent.textContent.includes('تم التقدم') ||
-                    parent.textContent.includes('تم التقديم') ||
-                    parent.querySelector('img[src*="tick"]')
-                );
+                console.log(`🔎 وظيفة ${i+1}: "${title}"`);
+                
+                // فحص بسيط للتقديم المسبق
+                let isApplied = false;
+                
+                // البحث في الرابط نفسه والعناصر المجاورة
+                const searchElements = [
+                    link,
+                    link.parentElement,
+                    link.parentElement?.parentElement,
+                    link.closest('[data-container]')
+                ].filter(Boolean);
+                
+                for (const element of searchElements) {
+                    if (!element) continue;
+                    
+                    const elementText = element.textContent || '';
+                    const hasAppliedText = elementText.includes('تم التقدم') || 
+                                         elementText.includes('تم التقديم');
+                    
+                    const hasAppliedIcon = element.querySelector('img[src*="tick"]') || 
+                                         element.querySelector('img[src*="check"]') ||
+                                         element.querySelector('img[src*="circle"]');
+                    
+                    if (hasAppliedText || hasAppliedIcon) {
+                        isApplied = true;
+                        console.log(`⏭️ تخطي "${title}" - مُقدم عليها مسبقاً`);
+                        break;
+                    }
+                }
                 
                 if (!isApplied) {
                     jobs.push({
@@ -214,11 +247,13 @@
                         title: title.substring(0, 80),
                         url: link.href
                     });
+                    console.log(`✅ إضافة "${title}" للقائمة`);
                 } else {
-                    console.log('⏭️ تخطي وظيفة مُقدم عليها:', title.substring(0, 50));
+                    console.log(`❌ تم تخطي "${title}"`);
                 }
             }
             
+            console.log(`📊 النتيجة النهائية: ${jobs.length} وظيفة متاحة من أصل ${jobLinks.length}`);
             return jobs;
         }
 
