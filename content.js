@@ -98,10 +98,7 @@
             this.isRunning = true;
             this.showIndicator('🚀 جاري العمل...', '#00ff88');
             
-            this.sendMessage('UPDATE_PROGRESS', { 
-                progress: 0, 
-                text: 'بدء البحث عن الوظائف...' 
-            });
+            console.log('📨 رسالة: UPDATE_PROGRESS', { progress: 0, text: 'بدء البحث عن الوظائف...' });
 
             await this.delay(2000);
             
@@ -111,21 +108,28 @@
             console.log(`جدارات أوتو: تم العثور على ${jobs.length} وظيفة`);
             
             if (jobs.length === 0) {
-                console.log('🔍 تشخيص: لم يتم العثور على وظائف');
-                console.log('عدد الروابط في الصفحة:', document.querySelectorAll('a').length);
-                console.log('عدد روابط JobDetails:', document.querySelectorAll('a[href*="JobDetails"]').length);
-                console.log('عدد data-link:', document.querySelectorAll('[data-link]').length);
+                console.log('🔍 تشخيص مفصل: لم يتم العثور على وظائف');
                 
-                this.sendMessage('AUTOMATION_ERROR', { 
-                    error: 'لم يتم العثور على وظائف - تأكد من أنك في صفحة قائمة الوظائف' 
-                });
+                // تشخيص مفصل
+                console.log('🔍 عدد الروابط الكلي في الصفحة:', document.querySelectorAll('a').length);
+                console.log('🔍 عدد روابط JobDetails:', document.querySelectorAll('a[href*="JobDetails"]').length);
+                console.log('🔍 عدد data-link:', document.querySelectorAll('[data-link]').length);
+                console.log('🔍 عدد data-container:', document.querySelectorAll('[data-container]').length);
+                
+                // عرض عينة من الروابط
+                const allJobLinks = document.querySelectorAll('a[href*="JobDetails"]');
+                console.log('🔍 عينة من روابط JobDetails:');
+                for(let i = 0; i < Math.min(3, allJobLinks.length); i++) {
+                    console.log(`   ${i+1}. ${allJobLinks[i].href}`);
+                    console.log(`      النص: "${allJobLinks[i].textContent.trim().substring(0, 50)}"`);
+                }
+                
+                console.log('📨 رسالة: AUTOMATION_ERROR', { error: 'لم يتم العثور على وظائف - انظر التشخيص في Console' });
+                this.hideIndicator();
                 return;
             }
 
-            this.sendMessage('UPDATE_PROGRESS', { 
-                progress: 10, 
-                text: `تم العثور على ${jobs.length} وظيفة - بدء المعالجة` 
-            });
+            console.log('📨 رسالة: UPDATE_PROGRESS', { progress: 10, text: `تم العثور على ${jobs.length} وظيفة - بدء المعالجة` });
 
             // معالجة كل وظيفة
             for (let i = 0; i < jobs.length; i++) {
@@ -134,16 +138,10 @@
                 const job = jobs[i];
                 console.log(`🎯 معالجة الوظيفة ${i + 1}: ${job.title}`);
                 
-                this.sendMessage('UPDATE_CURRENT_JOB', { 
-                    jobTitle: job.title, 
-                    status: 'processing' 
-                });
+                console.log('📨 رسالة: UPDATE_CURRENT_JOB', { jobTitle: job.title, status: 'processing' });
                 
                 const progress = ((i + 1) / jobs.length) * 100;
-                this.sendMessage('UPDATE_PROGRESS', { 
-                    progress: progress, 
-                    text: `معالجة الوظيفة ${i + 1} من ${jobs.length}` 
-                });
+                console.log('📨 رسالة: UPDATE_PROGRESS', { progress: progress, text: `معالجة الوظيفة ${i + 1} من ${jobs.length}` });
                 
                 try {
                     await this.processJob(job);
@@ -153,13 +151,13 @@
                 }
                 
                 this.stats.total++;
-                this.sendMessage('UPDATE_STATS', { stats: this.stats });
+                console.log('📨 رسالة: UPDATE_STATS', { stats: this.stats });
                 
                 await this.delay(3000); // انتظار بين الوظائف
             }
             
             console.log('✅ انتهى العمل');
-            this.sendMessage('AUTOMATION_COMPLETED');
+            console.log('📨 رسالة: AUTOMATION_COMPLETED');
             this.hideIndicator();
         }
 
@@ -286,10 +284,7 @@
             
             if (!submitButton) {
                 console.log('❌ لم يتم العثور على زر التقديم');
-                this.sendMessage('UPDATE_CURRENT_JOB', { 
-                    jobTitle: job.title, 
-                    status: 'skipped' 
-                });
+                console.log('📨 رسالة: UPDATE_CURRENT_JOB', { jobTitle: job.title, status: 'skipped' });
                 this.stats.skipped++;
                 
                 // العودة
@@ -312,10 +307,7 @@
             // التعامل مع النوافذ
             await this.handleDialogs();
             
-            this.sendMessage('UPDATE_CURRENT_JOB', { 
-                jobTitle: job.title, 
-                status: 'success' 
-            });
+            console.log('📨 رسالة: UPDATE_CURRENT_JOB', { jobTitle: job.title, status: 'success' });
             this.stats.applied++;
             
             console.log('✅ تم التقديم بنجاح');
@@ -396,14 +388,8 @@
         }
 
         sendMessage(action, data = {}) {
-            // إرسال بسيط بدون callback لتجنب الأخطاء
-            setTimeout(() => {
-                try {
-                    chrome.runtime.sendMessage({ action, ...data });
-                } catch (e) {
-                    // تجاهل الأخطاء
-                }
-            }, 10);
+            // إزالة sendMessage تماماً لتجنب الأخطاء
+            console.log(`📨 رسالة: ${action}`, data);
         }
     }
 
