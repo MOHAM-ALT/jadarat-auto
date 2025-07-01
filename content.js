@@ -1,5 +1,5 @@
-// جدارات أوتو - Content Script النظيف 100%
-console.log('🎯 جدارات أوتو: بدء تحميل المحتوى');
+// جدارات أوتو - Content Script الذكي المتكيف 100%
+console.log('🎯 جدارات أوتو: بدء تحميل المحتوى الذكي');
 
 // منع التكرار
 if (window.jadaratAutoContentLoaded) {
@@ -27,12 +27,13 @@ if (window.jadaratAutoContentLoaded) {
             this.currentPage = 1;
             this.currentJobIndex = 0;
             this.totalJobs = 0;
+            this.resumeData = null; // بيانات الاستكمال
             
             this.initializeListeners();
             this.checkPageType();
             this.addVisualIndicator();
             
-            console.log('✅ جدارات أوتو: تم التهيئة بنجاح');
+            console.log('✅ جدارات أوتو: تم التهيئة بنجاح - النسخة الذكية');
         }
 
         initializeListeners() {
@@ -44,17 +45,20 @@ if (window.jadaratAutoContentLoaded) {
 
         checkPageType() {
             const url = window.location.href;
-            console.log('🔍 فحص نوع الصفحة:', url);
+            console.log('🔍 تحليل الصفحة الحالية:', url);
             
-            const pageText = document.body.textContent;
+            const pageText = document.body.textContent || '';
             
-            // مؤشرات صفحة تفاصيل الوظيفة
+            // فحص مؤشرات صفحة تفاصيل الوظيفة
             const detailsIndicators = [
                 'نوع العمل',
                 'الراتب', 
+                'الجنس',
                 'المنطقة',
                 'المؤهل العلمي',
-                'سنوات الخبرة'
+                'سنوات الخبرة',
+                'تاريخ بداية النشر',
+                'وصف الوظيفة'
             ];
             
             let detailsScore = 0;
@@ -64,31 +68,120 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
             
-            // فحص وجود عدة روابط وظائف
+            // فحص وجود روابط متعددة للوظائف
             const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
             const hasMultipleJobs = jobLinks.length >= 2;
             
-            // تحديد نوع الصفحة
-            if (detailsScore >= 3) {
+            // فحص وجود pagination
+            const hasPagination = document.querySelector('button[aria-label*="next page"], .pagination');
+            
+            // تحديد نوع الصفحة بدقة
+            if (detailsScore >= 4 || (url.includes('JobDetails') && !hasMultipleJobs)) {
                 this.pageType = 'jobDetails';
-                console.log('📄 صفحة تفاصيل الوظيفة');
-            } else if (hasMultipleJobs || url.includes('ExploreJobs') || url.includes('JobTab=1')) {
+                console.log('📄 صفحة تفاصيل وظيفة مكتشفة');
+                this.analyzeJobDetailsPage();
+            } else if (hasMultipleJobs || url.includes('ExploreJobs') || hasPagination) {
                 this.pageType = 'jobList';
-                console.log('📋 صفحة قائمة الوظائف');
+                console.log('📋 صفحة قائمة الوظائف مكتشفة');
+                this.analyzeJobListPage();
+            } else if (url.includes('jadarat.sa') && pageText.includes('البحث عن الوظائف')) {
+                this.pageType = 'home';
+                console.log('🏠 الصفحة الرئيسية مكتشفة');
             } else {
                 this.pageType = 'unknown';
                 console.log('❓ صفحة غير معروفة');
             }
         }
 
+        analyzeJobDetailsPage() {
+            // تحليل صفحة تفاصيل الوظيفة
+            const jobTitle = this.extractCurrentJobTitle();
+            const isAlreadyApplied = this.checkIfCurrentJobApplied();
+            
+            console.log(`📝 وظيفة حالية: ${jobTitle}`);
+            console.log(`📊 حالة التقديم: ${isAlreadyApplied ? 'مقدم عليها' : 'لم يتم التقديم'}`);
+            
+            this.resumeData = {
+                type: 'jobDetails',
+                jobTitle: jobTitle,
+                isApplied: isAlreadyApplied,
+                url: window.location.href
+            };
+        }
+
+        analyzeJobListPage() {
+            // تحليل صفحة قائمة الوظائف
+            this.currentPage = this.extractCurrentPageNumber();
+            const totalJobs = document.querySelectorAll('a[href*="JobDetails"]').length;
+            
+            console.log(`📊 الصفحة الحالية: ${this.currentPage}`);
+            console.log(`📋 عدد الوظائف في الصفحة: ${totalJobs}`);
+            
+            this.resumeData = {
+                type: 'jobList',
+                currentPage: this.currentPage,
+                totalJobs: totalJobs,
+                url: window.location.href
+            };
+        }
+
+        extractCurrentJobTitle() {
+            const titleSelectors = [
+                'h1',
+                '.heading1',
+                '.job-title',
+                '[data-block*="JobTitle"]',
+                '.page-title'
+            ];
+            
+            for (const selector of titleSelectors) {
+                const element = document.querySelector(selector);
+                if (element && element.textContent.trim()) {
+                    return element.textContent.trim();
+                }
+            }
+            
+            return 'وظيفة غير محددة';
+        }
+
+        checkIfCurrentJobApplied() {
+            // فحص حالة التقديم في صفحة التفاصيل
+            const appliedIndicators = [
+                'استعراض طلب التقديم',
+                'تم التقديم على هذه الوظيفة',
+                'طلب مقدم',
+                'تم التقدم'
+            ];
+            
+            const pageText = document.body.textContent || '';
+            return appliedIndicators.some(indicator => pageText.includes(indicator));
+        }
+
+        extractCurrentPageNumber() {
+            // استخراج رقم الصفحة الحالية
+            const activePageBtn = document.querySelector('.pagination-button.is--active, .pagination .active');
+            if (activePageBtn) {
+                const pageNum = parseInt(activePageBtn.textContent.trim());
+                if (!isNaN(pageNum)) {
+                    return pageNum;
+                }
+            }
+            
+            // البحث في URL
+            const urlMatch = window.location.href.match(/page[=:](\d+)/i);
+            if (urlMatch) {
+                return parseInt(urlMatch[1]);
+            }
+            
+            return 1; // افتراضي
+        }
+
         addVisualIndicator() {
-            // إزالة المؤشر القديم
             const existingIndicator = document.getElementById('jadarat-auto-indicator');
             if (existingIndicator) {
                 existingIndicator.remove();
             }
 
-            // إنشاء مؤشر جديد
             const indicator = document.createElement('div');
             indicator.id = 'jadarat-auto-indicator';
             indicator.style.cssText = `
@@ -105,17 +198,25 @@ if (window.jadaratAutoContentLoaded) {
                 box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
                 display: none;
                 font-family: Arial, sans-serif;
+                max-width: 300px;
+                text-align: center;
             `;
             indicator.textContent = '🎯 جدارات أوتو - جاهز';
             document.body.appendChild(indicator);
         }
 
-        showIndicator(text, color = '#00d4ff') {
+        showIndicator(text, color = '#00d4ff', duration = 0) {
             const indicator = document.getElementById('jadarat-auto-indicator');
             if (indicator) {
                 indicator.textContent = text;
                 indicator.style.background = `linear-gradient(45deg, ${color}, #7d2ae8)`;
                 indicator.style.display = 'block';
+                
+                if (duration > 0) {
+                    setTimeout(() => {
+                        indicator.style.display = 'none';
+                    }, duration);
+                }
             }
         }
 
@@ -132,12 +233,12 @@ if (window.jadaratAutoContentLoaded) {
             try {
                 switch (message.action) {
                     case 'PING':
-                        sendResponse({ status: 'active' });
+                        sendResponse({ status: 'active', pageType: this.pageType });
                         break;
                         
                     case 'START_AUTOMATION':
                         this.settings = message.settings || this.settings;
-                        this.startAutomation();
+                        await this.startSmartAutomation();
                         sendResponse({ success: true });
                         break;
                         
@@ -160,37 +261,6 @@ if (window.jadaratAutoContentLoaded) {
             }
         }
 
-        async startAutomation() {
-            console.log('🚀 بدء الأتمتة');
-            
-            // فحص تسجيل الدخول
-            if (!this.checkLoginStatus()) {
-                this.sendMessage('AUTOMATION_ERROR', { 
-                    error: '⚠️ يجب تسجيل الدخول أولاً' 
-                });
-                this.showIndicator('⚠️ غير مسجل دخول', '#ff4545');
-                return;
-            }
-            
-            if (this.pageType !== 'jobList') {
-                this.sendMessage('AUTOMATION_ERROR', { 
-                    error: 'يجب أن تكون في صفحة البحث عن الوظائف' 
-                });
-                return;
-            }
-
-            this.isRunning = true;
-            this.isPaused = false;
-            
-            this.showIndicator('🚀 جاري العمل...', '#00ff88');
-            this.sendMessage('UPDATE_PROGRESS', { 
-                progress: 0, 
-                text: 'بدء تحليل الصفحة...' 
-            });
-
-            await this.processCurrentPage();
-        }
-
         pauseAutomation() {
             console.log('⏸️ إيقاف مؤقت');
             this.isPaused = true;
@@ -204,6 +274,167 @@ if (window.jadaratAutoContentLoaded) {
             this.hideIndicator();
         }
 
+        async startSmartAutomation() {
+            console.log('🧠 بدء الأتمتة الذكية');
+            
+            // فحص تسجيل الدخول
+            if (!this.checkLoginStatus()) {
+                this.sendMessage('AUTOMATION_ERROR', { 
+                    error: '⚠️ يجب تسجيل الدخول أولاً' 
+                });
+                this.showIndicator('⚠️ غير مسجل دخول', '#ff4545', 5000);
+                return;
+            }
+            
+            this.isRunning = true;
+            this.isPaused = false;
+            
+            // البدء الذكي حسب نوع الصفحة
+            await this.smartStart();
+        }
+
+        async smartStart() {
+            console.log(`🎯 البدء الذكي - نوع الصفحة: ${this.pageType}`);
+            
+            switch (this.pageType) {
+                case 'jobDetails':
+                    await this.startFromJobDetails();
+                    break;
+                    
+                case 'jobList':
+                    await this.startFromJobList();
+                    break;
+                    
+                case 'home':
+                    await this.navigateToJobList();
+                    break;
+                    
+                default:
+                    this.sendMessage('AUTOMATION_ERROR', { 
+                        error: 'يرجى الانتقال إلى موقع جدارات أولاً' 
+                    });
+                    this.showIndicator('❌ صفحة غير مدعومة', '#ff4545', 5000);
+            }
+        }
+
+        async startFromJobDetails() {
+            console.log('📄 البدء من صفحة تفاصيل الوظيفة');
+            
+            const jobTitle = this.resumeData?.jobTitle || 'الوظيفة الحالية';
+            
+            this.showIndicator(`🔍 تم اكتشافك في: ${jobTitle}`, '#ffc107');
+            
+            this.sendMessage('UPDATE_PROGRESS', { 
+                progress: 0, 
+                text: `معالجة الوظيفة الحالية: ${jobTitle}` 
+            });
+
+            // معالجة الوظيفة الحالية
+            const result = await this.processCurrentJob();
+            
+            if (result.completed) {
+                this.showIndicator('⚡ سأعود للقائمة وأكمل باقي الوظائف', '#00ff88', 3000);
+                
+                // العودة لقائمة الوظائف
+                await this.goBackToJobList();
+                
+                // المتابعة من قائمة الوظائف
+                await this.startFromJobList();
+            } else {
+                this.sendMessage('AUTOMATION_ERROR', { 
+                    error: 'فشل في معالجة الوظيفة الحالية' 
+                });
+            }
+        }
+
+        async startFromJobList() {
+            console.log('📋 البدء من قائمة الوظائف');
+            
+            const pageInfo = this.resumeData || {};
+            const currentPage = pageInfo.currentPage || 1;
+            
+            this.showIndicator(`🚀 العمل في الصفحة ${currentPage}`, '#00ff88');
+            
+            this.sendMessage('UPDATE_PROGRESS', { 
+                progress: 0, 
+                text: `بدء المعالجة من الصفحة ${currentPage}` 
+            });
+
+            await this.processCurrentPage();
+        }
+
+        async navigateToJobList() {
+            console.log('🔄 الانتقال لقائمة الوظائف');
+            
+            this.showIndicator('🔄 جاري الانتقال لقائمة الوظائف...', '#ffc107');
+            
+            // البحث عن رابط قائمة الوظائف
+            const exploreJobsLink = document.querySelector('a[href*="ExploreJobs"], a[href*="JobTab=1"]');
+            
+            if (exploreJobsLink) {
+                this.clickElementImproved(exploreJobsLink);
+                await this.waitForNavigationImproved();
+                await this.wait(3000);
+                
+                this.checkPageType();
+                
+                if (this.pageType === 'jobList') {
+                    await this.startFromJobList();
+                } else {
+                    this.sendMessage('AUTOMATION_ERROR', { 
+                        error: 'فشل في الانتقال لقائمة الوظائف' 
+                    });
+                }
+            } else {
+                this.sendMessage('AUTOMATION_ERROR', { 
+                    error: 'لم يتم العثور على رابط قائمة الوظائف' 
+                });
+            }
+        }
+
+        async processCurrentJob() {
+            // معالجة الوظيفة الحالية في صفحة التفاصيل
+            try {
+                const jobTitle = this.resumeData?.jobTitle || 'الوظيفة الحالية';
+                
+                console.log(`📝 معالجة الوظيفة الحالية: ${jobTitle}`);
+                
+                this.sendMessage('UPDATE_CURRENT_JOB', { 
+                    jobTitle: jobTitle, 
+                    status: 'processing' 
+                });
+
+                // التعامل مع النوافذ المنبثقة أولاً
+                await this.handlePopups();
+                
+                // فحص حالة التقديم
+                const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
+                
+                if (alreadyApplied) {
+                    this.stats.skipped++;
+                    this.sendMessage('UPDATE_CURRENT_JOB', { 
+                        jobTitle: jobTitle, 
+                        status: 'skipped' 
+                    });
+                    console.log('⏭️ تم التخطي - مُقدم عليها مسبقاً');
+                } else {
+                    // محاولة التقديم
+                    const applicationResult = await this.applyForJobWithRetry();
+                    
+                    this.handleApplicationResult(applicationResult, jobTitle);
+                }
+
+                this.stats.total++;
+                this.sendMessage('UPDATE_STATS', { stats: this.stats });
+                
+                return { completed: true };
+
+            } catch (error) {
+                console.error('❌ خطأ في معالجة الوظيفة الحالية:', error);
+                return { completed: false, error: error.message };
+            }
+        }
+
         async processCurrentPage() {
             if (!this.isRunning || this.isPaused) return;
 
@@ -211,9 +442,9 @@ if (window.jadaratAutoContentLoaded) {
                 console.log('🔄 معالجة الصفحة الحالية');
                 
                 // انتظار تحميل الصفحة
-                await this.wait(3000);
+                await this.wait(4000);
                 
-                const jobCards = this.getJobCards();
+                const jobCards = this.getJobCardsWithRetry();
                 this.totalJobs = jobCards.length;
 
                 console.log(`💼 تم العثور على ${this.totalJobs} وظيفة`);
@@ -227,10 +458,10 @@ if (window.jadaratAutoContentLoaded) {
 
                 this.sendMessage('UPDATE_PROGRESS', { 
                     progress: 0, 
-                    text: `العثور على ${this.totalJobs} وظيفة` 
+                    text: `العثور على ${this.totalJobs} وظيفة في الصفحة ${this.currentPage}` 
                 });
 
-                // معالجة كل وظيفة
+                // معالجة كل وظيفة مع آلية إعادة المحاولة
                 for (let i = 0; i < jobCards.length; i++) {
                     if (!this.isRunning || this.isPaused) {
                         console.log('🛑 تم إيقاف العملية');
@@ -240,7 +471,12 @@ if (window.jadaratAutoContentLoaded) {
                     const jobCard = jobCards[i];
                     console.log(`📝 معالجة الوظيفة ${i + 1}/${jobCards.length}: ${jobCard.title}`);
                     
-                    await this.processJob(jobCard, i + 1);
+                    const success = await this.processJobWithRetry(jobCard, i + 1);
+                    
+                    if (!success) {
+                        console.log(`⚠️ فشل في الوظيفة ${i + 1}، الانتقال للتالية`);
+                        // لا نتوقف، نتابع للوظيفة التالية
+                    }
                     
                     const progress = ((i + 1) / jobCards.length) * 100;
                     this.sendMessage('UPDATE_PROGRESS', { 
@@ -262,13 +498,87 @@ if (window.jadaratAutoContentLoaded) {
             }
         }
 
+        getJobCardsWithRetry(maxRetries = 3) {
+            // كشف الوظائف مع إعادة المحاولة
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                console.log(`🔍 محاولة كشف الوظائف ${attempt}/${maxRetries}`);
+                
+                const jobCards = this.getJobCards();
+                
+                if (jobCards.length > 0) {
+                    console.log(`✅ تم العثور على ${jobCards.length} وظيفة`);
+                    return jobCards;
+                }
+                
+                console.log(`⚠️ لم يتم العثور على وظائف في المحاولة ${attempt}`);
+                
+                if (attempt < maxRetries) {
+                    // انتظار وإعادة تحميل
+                    setTimeout(() => {
+                        window.scrollTo(0, document.body.scrollHeight / 2);
+                    }, 1000 * attempt);
+                }
+            }
+            
+            return [];
+        }
+
+        async processJobWithRetry(jobCard, jobIndex, maxRetries = 2) {
+            // معالجة الوظيفة مع إعادة المحاولة
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    console.log(`🎯 محاولة ${attempt}/${maxRetries} لمعالجة: ${jobCard.title}`);
+                    
+                    await this.processJob(jobCard, jobIndex);
+                    return true; // نجح
+                    
+                } catch (error) {
+                    console.error(`❌ فشلت المحاولة ${attempt}:`, error.message);
+                    
+                    if (attempt < maxRetries) {
+                        console.log('🔄 إعادة المحاولة...');
+                        
+                        // العودة للقائمة قبل إعادة المحاولة
+                        try {
+                            await this.goBackToJobList();
+                        } catch (backError) {
+                            console.error('❌ فشل في العودة:', backError.message);
+                        }
+                        
+                        await this.wait(3000);
+                    }
+                }
+            }
+            
+            // فشل في جميع المحاولات
+            console.error(`❌ فشل نهائياً في معالجة: ${jobCard.title}`);
+            this.stats.skipped++;
+            this.stats.total++;
+            this.sendMessage('UPDATE_STATS', { stats: this.stats });
+            
+            return false;
+        }
+
         getJobCards() {
             console.log('🔍 البحث عن بطاقات الوظائف');
             
             const jobCards = [];
-            const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
             
-            console.log(`🔗 تم العثور على ${jobLinks.length} رابط وظيفة`);
+            // محددات متعددة للبحث
+            const selectors = [
+                'a[data-link][href*="/Jadarat/JobDetails"]',
+                'a[href*="JobDetails"]',
+                'a[href*="Param="]'
+            ];
+            
+            let jobLinks = [];
+            for (const selector of selectors) {
+                jobLinks = document.querySelectorAll(selector);
+                if (jobLinks.length > 0) {
+                    console.log(`🔗 تم العثور على ${jobLinks.length} رابط باستخدام: ${selector}`);
+                    break;
+                }
+            }
             
             for (const link of jobLinks) {
                 const jobTitle = this.getJobTitle(link);
@@ -296,12 +606,13 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         getJobTitle(link) {
-            // البحث عن عنوان الوظيفة
+            // استخراج عنوان الوظيفة مع محددات متعددة
             const titleSelectors = [
                 'span.heading4',
                 '.heading4',
                 'span[data-expression]',
-                'span'
+                'span',
+                '.job-title'
             ];
             
             for (const selector of titleSelectors) {
@@ -309,6 +620,12 @@ if (window.jadaratAutoContentLoaded) {
                 if (element && element.textContent.trim()) {
                     return element.textContent.trim();
                 }
+            }
+            
+            // البحث في النص المحيط
+            const parentText = link.parentElement?.textContent || '';
+            if (parentText.length > 10 && parentText.length < 100) {
+                return parentText.trim();
             }
             
             return 'وظيفة غير محددة';
@@ -325,7 +642,8 @@ if (window.jadaratAutoContentLoaded) {
                 
                 // التحقق من وجود معلومات الوظيفة
                 const hasJobInfo = container.textContent.includes('المدينة') || 
-                                 container.textContent.includes('تاريخ النشر');
+                                 container.textContent.includes('تاريخ النشر') ||
+                                 container.textContent.includes('الوظائف المتاحة');
                 
                 if (hasJobInfo) {
                     return container;
@@ -336,15 +654,20 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         checkIfAlreadyApplied(container) {
-            // فحص أيقونة "تم التقدم"
-            const tickIcon = container.querySelector('img[src*="tickcircle.svg"]');
-            if (tickIcon) {
-                return true;
-            }
+            // فحص حالة التقديم مع طرق متعددة
+            const text = container.textContent || '';
+            const html = container.innerHTML || '';
             
             // فحص النص
-            const text = container.textContent || '';
-            if (text.includes('تم التقدم') || text.includes('تم التقديم')) {
+            const appliedTexts = ['تم التقدم', 'تم التقديم', 'مقدم عليها'];
+            for (const appliedText of appliedTexts) {
+                if (text.includes(appliedText)) {
+                    return true;
+                }
+            }
+            
+            // فحص الأيقونة
+            if (html.includes('tickcircle.svg') || html.includes('check-circle')) {
                 return true;
             }
             
@@ -352,112 +675,97 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         async processJob(jobCard, jobIndex) {
-            try {
-                const jobTitle = jobCard.title;
-                console.log(`🎯 معالجة: ${jobTitle}`);
+            const jobTitle = jobCard.title;
+            console.log(`🎯 معالجة: ${jobTitle}`);
+            
+            this.sendMessage('UPDATE_CURRENT_JOB', { 
+                jobTitle: jobTitle, 
+                status: 'processing' 
+            });
+
+            // تمييز الرابط
+            this.highlightElement(jobCard.link);
+
+            // النقر على الوظيفة مع آلية محسنة
+            console.log('👆 النقر على رابط الوظيفة');
+            await this.clickElementImproved(jobCard.link);
+            
+            // انتظار التنقل مع تحسينات
+            await this.waitForNavigationImproved();
+            await this.wait(4000);
+            
+            // التحقق من نوع الصفحة
+            this.checkPageType();
+            
+            if (this.pageType === 'jobDetails') {
+                console.log('✅ وصلنا لصفحة التفاصيل');
                 
+                // التعامل مع النوافذ المنبثقة
+                await this.handlePopups();
+                
+                // فحص التقديم المسبق
+                const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
+                
+                if (alreadyApplied) {
+                    this.stats.skipped++;
+                    this.sendMessage('UPDATE_CURRENT_JOB', { 
+                        jobTitle: jobTitle, 
+                        status: 'skipped' 
+                    });
+                    console.log('⏭️ مقدم عليها مسبقاً');
+                } else {
+                    // محاولة التقديم
+                    const result = await this.applyForJobWithRetry();
+                    
+                    this.handleApplicationResult(result, jobTitle);
+                }
+
+                this.stats.total++;
+                this.sendMessage('UPDATE_STATS', { stats: this.stats });
+
+                // العودة للقائمة
+                await this.goBackToJobList();
+                
+            } else {
+                throw new Error('فشل في فتح صفحة التفاصيل');
+            }
+        }
+
+        handleApplicationResult(result, jobTitle) {
+            // معالجة نتيجة التقديم
+            if (result.success) {
+                this.stats.applied++;
                 this.sendMessage('UPDATE_CURRENT_JOB', { 
                     jobTitle: jobTitle, 
-                    status: 'processing' 
+                    status: 'success' 
                 });
-
-                // تمييز الرابط
-                this.highlightElement(jobCard.link);
-
-                // النقر على الوظيفة
-                console.log('👆 النقر على رابط الوظيفة');
-                this.clickElement(jobCard.link);
+                console.log('✅ تم التقديم بنجاح');
                 
-                // انتظار التنقل
-                await this.waitForNavigation();
-                await this.wait(3000);
-                
-                // التحقق من نوع الصفحة
-                this.checkPageType();
-                
-                if (this.pageType === 'jobDetails') {
-                    console.log('✅ وصلنا لصفحة التفاصيل');
-                    
-                    // التعامل مع النوافذ المنبثقة
-                    await this.handlePopups();
-                    
-                    // فحص التقديم المسبق
-                    const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
-                    
-                    if (alreadyApplied) {
-                        this.stats.skipped++;
-                        this.sendMessage('UPDATE_CURRENT_JOB', { 
-                            jobTitle: jobTitle, 
-                            status: 'skipped' 
-                        });
-                        console.log('⏭️ مقدم عليها مسبقاً');
-                    } else {
-                        // محاولة التقديم
-                        const result = await this.applyForJob();
-                        
-                        if (result.success) {
-                            this.stats.applied++;
-                            this.sendMessage('UPDATE_CURRENT_JOB', { 
-                                jobTitle: jobTitle, 
-                                status: 'success' 
-                            });
-                            console.log('✅ تم التقديم بنجاح');
-                            
-                        } else if (result.type === 'rejection') {
-                            this.stats.rejected = (this.stats.rejected || 0) + 1;
-                            this.saveRejectionData(jobTitle, result.reason);
-                            this.sendMessage('UPDATE_CURRENT_JOB', { 
-                                jobTitle: jobTitle, 
-                                status: 'rejected',
-                                reason: result.reason
-                            });
-                            console.log('❌ تم الرفض:', result.reason);
-                            
-                        } else {
-                            this.stats.skipped++;
-                            this.sendMessage('UPDATE_CURRENT_JOB', { 
-                                jobTitle: jobTitle, 
-                                status: 'error',
-                                reason: result.reason
-                            });
-                            console.log('⚠️ فشل التقديم:', result.reason);
-                        }
-                    }
-
-                    this.stats.total++;
-                    this.sendMessage('UPDATE_STATS', { stats: this.stats });
-
-                    // العودة للقائمة
-                    await this.goBackToJobList();
-                    
-                } else {
-                    throw new Error('فشل في فتح صفحة التفاصيل');
-                }
-
-            } catch (error) {
-                console.error('❌ خطأ في معالجة الوظيفة:', error);
-                this.stats.skipped++;
-                this.stats.total++;
-                
+            } else if (result.type === 'rejection') {
+                this.stats.rejected = (this.stats.rejected || 0) + 1;
+                this.saveRejectionData(jobTitle, result.reason);
                 this.sendMessage('UPDATE_CURRENT_JOB', { 
-                    jobTitle: 'خطأ في المعالجة', 
-                    status: 'error' 
+                    jobTitle: jobTitle, 
+                    status: 'rejected',
+                    reason: result.reason
                 });
+                console.log('❌ تم رفض التقديم:', result.reason);
                 
-                this.sendMessage('UPDATE_STATS', { stats: this.stats });
-                
-                try {
-                    await this.goBackToJobList();
-                } catch (backError) {
-                    console.error('❌ خطأ في العودة:', backError);
-                }
+            } else {
+                this.stats.skipped++;
+                this.sendMessage('UPDATE_CURRENT_JOB', { 
+                    jobTitle: jobTitle, 
+                    status: 'error',
+                    reason: result.reason
+                });
+                console.log('⚠️ فشل التقديم:', result.reason);
             }
         }
 
         async handlePopups() {
             console.log('🔍 فحص النوافذ المنبثقة');
             
-            await this.wait(1500);
+            await this.wait(2000);
             
             const popups = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
             
@@ -473,7 +781,7 @@ if (window.jadaratAutoContentLoaded) {
                             btnText.includes('×')) {
                             
                             console.log('🚫 إغلاق النافذة المنبثقة');
-                            this.clickElement(btn);
+                            this.clickElementImproved(btn);
                             await this.wait(2000);
                             return;
                         }
@@ -500,11 +808,39 @@ if (window.jadaratAutoContentLoaded) {
             return false;
         }
 
+        async applyForJobWithRetry(maxRetries = 2) {
+            // تطبيق للوظيفة مع إعادة المحاولة
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    console.log(`📝 محاولة التقديم ${attempt}/${maxRetries}`);
+                    
+                    const result = await this.applyForJob();
+                    
+                    if (result.success || result.type === 'rejection') {
+                        return result; // نجح أو رُفض (كلاهما نتيجة واضحة)
+                    }
+                    
+                    if (attempt < maxRetries) {
+                        console.log('🔄 إعادة محاولة التقديم...');
+                        await this.wait(3000);
+                    }
+                    
+                } catch (error) {
+                    console.error(`❌ خطأ في محاولة التقديم ${attempt}:`, error);
+                    if (attempt === maxRetries) {
+                        return { success: false, reason: error.message };
+                    }
+                }
+            }
+            
+            return { success: false, reason: 'فشل في جميع محاولات التقديم' };
+        }
+
         async applyForJob() {
             console.log('📝 بدء عملية التقديم');
             
             try {
-                await this.wait(2000);
+                await this.wait(3000);
                 
                 const submitButton = this.findSubmitButton();
                 
@@ -513,14 +849,14 @@ if (window.jadaratAutoContentLoaded) {
                 }
 
                 console.log('👆 النقر على زر التقديم');
-                this.clickElement(submitButton);
+                await this.clickElementImproved(submitButton);
                 
                 // انتظار نافذة التأكيد
-                await this.wait(3000);
+                await this.wait(4000);
                 await this.handleConfirmationDialog();
                 
                 // انتظار نافذة النتيجة
-                await this.wait(3000);
+                await this.wait(4000);
                 const result = await this.handleResultDialog();
                 
                 return result;
@@ -569,8 +905,8 @@ if (window.jadaratAutoContentLoaded) {
                         
                         if (confirmButton) {
                             console.log('✅ النقر على زر التأكيد');
-                            this.clickElement(confirmButton);
-                            await this.wait(2000);
+                            await this.clickElementImproved(confirmButton);
+                            await this.wait(3000);
                             return;
                         }
                     }
@@ -593,7 +929,7 @@ if (window.jadaratAutoContentLoaded) {
                         
                         const closeButton = this.findCloseButton(dialog);
                         if (closeButton) {
-                            this.clickElement(closeButton);
+                            await this.clickElementImproved(closeButton);
                             await this.wait(2000);
                         }
                         
@@ -608,7 +944,7 @@ if (window.jadaratAutoContentLoaded) {
                         
                         const closeButton = this.findCloseButton(dialog);
                         if (closeButton) {
-                            this.clickElement(closeButton);
+                            await this.clickElementImproved(closeButton);
                             await this.wait(2000);
                         }
                         
@@ -658,9 +994,17 @@ if (window.jadaratAutoContentLoaded) {
         async goBackToJobList() {
             console.log('🔙 العودة لقائمة الوظائف');
             
-            window.history.back();
-            await this.waitForNavigation();
-            await this.wait(3000);
+            // محاولة الضغط على زر الرجوع أولاً
+            const backButton = document.querySelector('button[aria-label*="back"], .back-button, [class*="back"]');
+            if (backButton && backButton.offsetWidth > 0) {
+                await this.clickElementImproved(backButton);
+            } else {
+                // استخدام history.back()
+                window.history.back();
+            }
+            
+            await this.waitForNavigationImproved();
+            await this.wait(4000);
             
             this.checkPageType();
             
@@ -668,7 +1012,15 @@ if (window.jadaratAutoContentLoaded) {
                 console.log('✅ تم العودة بنجاح');
                 window.scrollTo(0, 0);
             } else {
-                console.log('⚠️ قد تكون العودة لم تنجح');
+                console.log('⚠️ قد تكون العودة لم تنجح، محاولة التنقل المباشر');
+                // محاولة الذهاب لقائمة الوظائف مباشرة
+                const exploreJobsLink = document.querySelector('a[href*="ExploreJobs"], a[href*="JobTab=1"]');
+                if (exploreJobsLink) {
+                    await this.clickElementImproved(exploreJobsLink);
+                    await this.waitForNavigationImproved();
+                    await this.wait(3000);
+                    this.checkPageType();
+                }
             }
         }
 
@@ -681,15 +1033,16 @@ if (window.jadaratAutoContentLoaded) {
                 console.log('➡️ الانتقال للصفحة التالية');
                 this.currentPage++;
                 
-                this.clickElement(nextButton);
-                await this.waitForNavigation();
-                await this.wait(4000);
+                await this.clickElementImproved(nextButton);
+                await this.waitForNavigationImproved();
+                await this.wait(5000);
                 
                 await this.processCurrentPage();
             } else {
                 console.log('🏁 انتهت جميع الصفحات');
                 this.sendMessage('AUTOMATION_COMPLETED');
                 this.hideIndicator();
+                this.showIndicator('🎉 تم الانتهاء من جميع الوظائف!', '#00ff88', 10000);
             }
         }
 
@@ -732,44 +1085,63 @@ if (window.jadaratAutoContentLoaded) {
                 
                 setTimeout(() => {
                     element.style.cssText = originalStyle;
-                }, 2000);
+                }, 3000);
             }
         }
 
-        clickElement(element) {
-            if (!element) return;
+        async clickElementImproved(element) {
+            if (!element) return false;
             
-            // إزالة target لتجنب التبويب الجديد
-            if (element.tagName === 'A') {
-                element.removeAttribute('target');
-                element.target = '_self';
-            }
-            
-            // تمرير العنصر إلى منتصف الشاشة
-            element.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'center' 
-            });
-            
-            // انتظار التمرير ثم النقر
-            setTimeout(() => {
+            try {
+                // إزالة target لتجنب التبويب الجديد
+                if (element.tagName === 'A') {
+                    element.removeAttribute('target');
+                    element.target = '_self';
+                }
+                
+                // تمرير العنصر إلى منتصف الشاشة
+                element.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'center' 
+                });
+                
+                // انتظار التمرير
+                await this.wait(1000);
+                
+                // محاولة النقر المباشر
+                console.log('🎯 محاولة النقر المباشر');
+                element.click();
+                
+                await this.wait(1000);
+                
+                return true;
+                
+            } catch (error1) {
                 try {
-                    element.click();
-                } catch (error1) {
+                    console.log('🎯 محاولة النقر بالـ Event');
+                    const event = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    element.dispatchEvent(event);
+                    
+                    await this.wait(1000);
+                    return true;
+                    
+                } catch (error2) {
                     try {
-                        const event = new MouseEvent('click', {
-                            view: window,
-                            bubbles: true,
-                            cancelable: true
-                        });
-                        element.dispatchEvent(event);
-                    } catch (error2) {
+                        console.log('🎯 محاولة التنقل المباشر');
                         if (element.href) {
                             window.location.href = element.href;
+                            return true;
                         }
+                    } catch (error3) {
+                        console.error('❌ فشل في جميع طرق النقر:', error3);
+                        return false;
                     }
                 }
-            }, 500);
+            }
         }
 
         async wait(ms) {
@@ -782,19 +1154,31 @@ if (window.jadaratAutoContentLoaded) {
             return base + (Math.random() * 2 - 1) * variation;
         }
 
-        async waitForNavigation() {
+        async waitForNavigationImproved() {
+            console.log('⏳ انتظار التنقل...');
+            
             return new Promise((resolve) => {
                 let attempts = 0;
-                const maxAttempts = 50;
+                const maxAttempts = 100; // زيادة المحاولات
+                const currentUrl = window.location.href;
                 
                 const checkForChange = () => {
                     attempts++;
-                    if (document.readyState === 'complete' || attempts >= maxAttempts) {
+                    
+                    // فحص تغيير URL
+                    const urlChanged = window.location.href !== currentUrl;
+                    
+                    // فحص حالة التحميل
+                    const pageLoaded = document.readyState === 'complete';
+                    
+                    if (urlChanged || pageLoaded || attempts >= maxAttempts) {
+                        console.log(`✅ التنقل مكتمل بعد ${attempts} محاولة`);
                         setTimeout(resolve, 500);
                     } else {
-                        setTimeout(checkForChange, 100);
+                        setTimeout(checkForChange, 200);
                     }
                 };
+                
                 checkForChange();
             });
         }
@@ -842,7 +1226,7 @@ if (window.jadaratAutoContentLoaded) {
                 if (window.jadaratAutoContent) {
                     window.jadaratAutoContent.checkPageType();
                 }
-            }, 1000);
+            }, 2000);
         }
     });
 
