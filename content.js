@@ -1,4 +1,4 @@
-// جدارات أوتو - Content Script مُصحح نهائياً
+// جدارات أوتو - Content Script البسيط العملي
 (function() {
     'use strict';
     
@@ -144,298 +144,7 @@
                         this.settings = message.settings;
                         setTimeout(async () => {
                             await this.startAutomation();
-                        }
-                }
-            }
-            
-            console.log('جدارات أوتو: لم يتم العثور على نافذة النتيجة');
-            return { success: false, reason: 'لم يتم العثور على نافذة النتيجة', type: 'unknown' };
-        }
-
-        extractRejectionReason(dialogText) {
-            // استخراج سبب الرفض من النص
-            const rejectionReasons = [
-                'الملف الشخصي لا يطابق شرط المؤهل التعليمي المطلوب',
-                'لا يطابق شرط الخبرة المطلوبة',
-                'لا يطابق شرط العمر المطلوب',
-                'لا يطابق شرط الجنس المطلوب',
-                'لا يطابق شرط الجنسية المطلوبة',
-                'لا يطابق شرط المنطقة المطلوبة',
-                'انتهت فترة التقديم',
-                'تم الوصول للعدد المطلوب'
-            ];
-            
-            for (const reason of rejectionReasons) {
-                if (dialogText.includes(reason)) {
-                    return reason;
-                }
-            }
-            
-            // إذا لم نجد سبب محدد، نعيد النص كاملاً
-            const lines = dialogText.split('\n').filter(line => line.trim().length > 10);
-            return lines.find(line => 
-                line.includes('لا يطابق') || 
-                line.includes('غير مؤهل') || 
-                line.includes('انتهت') ||
-                line.includes('تم الوصول')
-            ) || 'سبب غير محدد';
-        }
-
-        extractErrorReason(dialogText) {
-            // استخراج سبب الخطأ التقني
-            const lines = dialogText.split('\n').filter(line => line.trim().length > 5);
-            return lines.find(line => 
-                line.includes('خطأ') || 
-                line.includes('فشل') ||
-                line.includes('مشكلة')
-            ) || 'خطأ تقني غير محدد';
-        }
-
-        findCloseButton(dialog) {
-            // البحث عن أزرار الإغلاق المختلفة
-            const closeButtons = dialog.querySelectorAll('button');
-            
-            for (const btn of closeButtons) {
-                const text = btn.textContent.trim().toLowerCase();
-                if (text === 'إغلاق' || text === 'اغلاق' || 
-                    text === 'موافق' || text === 'ok' || text === 'تم') {
-                    return btn;
-                }
-            }
-            
-            // إذا لم نجد، نأخذ آخر زر
-            return closeButtons[closeButtons.length - 1];
-        }
-
-        async goBackToJobList() {
-            console.log('جدارات أوتو: العودة لقائمة الوظائف باستخدام history.back()');
-            
-            window.history.back();
-            await this.waitForNavigation();
-            await this.delay(3000);
-            
-            // التحقق من العودة
-            this.checkPageType();
-            
-            if (this.pageType === 'jobList') {
-                console.log('جدارات أوتو: ✅ تم العودة لقائمة الوظائف بنجاح');
-                window.scrollTo(0, 0);
-            } else {
-                console.log('جدارات أوتو: ⚠️ قد تكون العودة لم تنجح، نوع الصفحة:', this.pageType);
-                // لا نفعل شيء آخر، فقط نتابع
-            }
-        }
-
-        async goToNextPage() {
-            console.log('جدارات أوتو: البحث عن الصفحة التالية');
-            
-            const nextButton = document.querySelector('button[aria-label="go to next page"]:not([disabled])');
-            
-            if (nextButton) {
-                console.log('جدارات أوتو: الانتقال للصفحة التالية');
-                this.currentPage++;
-                this.currentJobIndex = 0;
-                
-                this.clickElement(nextButton);
-                await this.waitForNavigation();
-                await this.delay(4000); // 4 ثواني لصفحة الوظائف
-                
-                await this.processCurrentPage();
-            } else {
-                console.log('جدارات أوتو: انتهت جميع الصفحات');
-                this.sendMessage('AUTOMATION_COMPLETED');
-                this.hideIndicator();
-            }
-        }
-
-        checkLoginStatus() {
-            console.log('جدارات أوتو: فحص حالة تسجيل الدخول');
-            
-            // البحث عن زر تسجيل الدخول
-            const allButtons = document.querySelectorAll('button, a');
-            
-            for (const btn of allButtons) {
-                if (btn.textContent.includes('تسجيل الدخول') && btn.offsetWidth > 0) {
-                    console.log('جدارات أوتو: ⚠️  المستخدم غير مسجل دخول');
-                    return false;
-                }
-            }
-            
-            console.log('جدارات أوتو: ✅ المستخدم مسجل دخول');
-            return true;
-        }
-
-        async saveRejectionData(jobTitle, rejectionReason) {
-            try {
-                const rejectionData = {
-                    jobTitle: jobTitle,
-                    reason: rejectionReason,
-                    timestamp: new Date().toISOString(),
-                    date: new Date().toLocaleDateString('ar-SA'),
-                    time: new Date().toLocaleTimeString('ar-SA')
-                };
-                
-                console.log('جدارات أوتو: حفظ بيانات الرفض:', rejectionData);
-                
-                // إرسال للخلفية لحفظها
-                this.sendMessage('SAVE_REJECTION_DATA', { rejectionData });
-                
-            } catch (error) {
-                console.error('جدارات أوتو: خطأ في حفظ بيانات الرفض:', error);
-            }
-        }
-
-        highlightElement(element) {
-            if (element) {
-                const originalStyle = element.style.cssText;
-                element.style.cssText += `
-                    border: 3px solid #00d4ff !important; 
-                    background: rgba(0, 212, 255, 0.1) !important;
-                    box-shadow: 0 0 20px rgba(0, 212, 255, 0.5) !important;
-                `;
-                
-                setTimeout(() => {
-                    element.style.cssText = originalStyle;
-                }, 2000);
-            }
-        }
-
-        clickElement(element) {
-            if (element) {
-                console.log('جدارات أوتو: النقر على العنصر:', element);
-                
-                // التأكد من عدم فتح تبويب جديد
-                if (element.tagName === 'A') {
-                    element.removeAttribute('target');
-                    element.target = '_self';
-                }
-                
-                // تمرير العنصر إلى منتصف الشاشة
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
-                // تأثير بصري للنقر
-                const originalStyle = element.style.cssText;
-                element.style.cssText += 'border: 3px solid #00d4ff !important; background: rgba(0, 212, 255, 0.1) !important;';
-                
-                setTimeout(() => {
-                    element.style.cssText = originalStyle;
-                }, 1000);
-                
-                // النقر الفعلي
-                try {
-                    element.click();
-                } catch (e) {
-                    // طريقة بديلة للنقر
-                    const event = new MouseEvent('click', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    element.dispatchEvent(event);
-                }
-            }
-        }
-
-        async delay(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
-        }
-
-        getRandomDelay() {
-            const base = this.settings.delayTime * 1000;
-            const variation = base * 0.3; // تنويع 30%
-            return base + (Math.random() * 2 - 1) * variation;
-        }
-
-        async waitForNavigation() {
-            return new Promise((resolve) => {
-                let attempts = 0;
-                const maxAttempts = 50;
-                
-                const checkForChange = () => {
-                    attempts++;
-                    if (document.readyState === 'complete' || attempts >= maxAttempts) {
-                        setTimeout(resolve, 500);
-                    } else {
-                        setTimeout(checkForChange, 100);
-                    }
-                };
-                checkForChange();
-            });
-        }
-
-        saveCurrentPosition() {
-            const position = {
-                page: this.currentPage,
-                jobIndex: this.currentJobIndex,
-                stats: this.stats,
-                url: window.location.href,
-                timestamp: Date.now()
-            };
-            
-            console.log('جدارات أوتو: حفظ الموقع الحالي:', position);
-            this.sendMessage('SAVE_POSITION', { position });
-        }
-
-        sendMessage(action, data) {
-            data = data || {};
-            try {
-                const message = {
-                    action: action,
-                    ...data
-                };
-                
-                chrome.runtime.sendMessage(message, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error('جدارات أوتو: خطأ في إرسال الرسالة:', chrome.runtime.lastError);
-                    }
-                });
-            } catch (error) {
-                console.error('جدارات أوتو: خطأ في إرسال الرسالة:', error);
-            }
-        }
-    }
-
-    // إنشاء المتغير العام
-    let jadaratAutoContent = null;
-
-    function initializeContent() {
-        try {
-            if (!jadaratAutoContent) {
-                jadaratAutoContent = new JadaratAutoContent();
-                console.log('جدارات أوتو: تم تهيئة المحتوى بنجاح - الإصدار النهائي المُصحح');
-            }
-        } catch (error) {
-            console.error('جدارات أوتو: خطأ في التهيئة:', error);
-        }
-    }
-
-    // تهيئة المحتوى
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeContent);
-    } else {
-        initializeContent();
-    }
-
-    // مراقبة تغيير URL للصفحات الديناميكية
-    let lastUrl = location.href;
-    const observer = new MutationObserver(() => {
-        const url = location.href;
-        if (url !== lastUrl) {
-            lastUrl = url;
-            console.log('جدارات أوتو: تغيير الصفحة المكتشف');
-            setTimeout(() => {
-                if (!jadaratAutoContent) {
-                    initializeContent();
-                } else {
-                    jadaratAutoContent.checkPageType();
-                }
-            }, 1000);
-        }
-    });
-
-    observer.observe(document, { subtree: true, childList: true });
-
-})();, 100);
+                        }, 100);
                         sendResponse({ success: true });
                         break;
                         
@@ -669,8 +378,8 @@
                 if (this.pageType === 'jobDetails') {
                     console.log('جدارات أوتو: ✅ وصلنا لصفحة تفاصيل الوظيفة');
                     
-                    // التعامل مع النوافذ المنبثقة (بما في ذلك سياسة الخصوصية)
-                    await this.handleDigitalExperiencePopup();
+                    // التعامل مع النوافذ المنبثقة
+                    await this.handlePopups();
                     
                     // فحص حالة التقديم في صفحة التفاصيل
                     const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
@@ -750,67 +459,30 @@
             }
         }
 
-        async handleDigitalExperiencePopup() {
-            console.log('جدارات أوتو: البحث عن النوافذ المنبثقة وسياسة الخصوصية');
+        async handlePopups() {
+            console.log('جدارات أوتو: فحص النوافذ المنبثقة');
             
             await this.delay(1500);
             
-            // البحث عن النوافذ المنبثقة المختلفة
-            const popupSelectors = [
-                '[role="dialog"]',
-                '.modal-dialog',
-                '.modal',
-                '.popup',
-                '.overlay',
-                '[class*="modal"]',
-                '[class*="popup"]',
-                '[class*="dialog"]'
-            ];
-
-            for (const selector of popupSelectors) {
-                const popups = document.querySelectorAll(selector);
-                for (const popup of popups) {
-                    if (popup.offsetWidth > 0 && popup.offsetHeight > 0) {
-                        const text = popup.textContent;
-                        
-                        console.log('جدارات أوتو: تم العثور على نافذة منبثقة:', text.substring(0, 100));
-                        
-                        // التحقق من أنواع النوافذ المختلفة
-                        if (text.includes('سياسة الخصوصية') || 
-                            text.includes('تحديثات سياسة الخصوصية') ||
-                            text.includes('البيانات الشخصية') ||
-                            text.includes('صندوق تنمية الموارد البشرية')) {
+            const popups = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
+            
+            for (const popup of popups) {
+                if (popup.offsetWidth > 0 && popup.offsetHeight > 0) {
+                    const text = popup.textContent;
+                    console.log('جدارات أوتو: تم العثور على نافذة منبثقة');
+                    
+                    // البحث عن أزرار الإغلاق
+                    const buttons = popup.querySelectorAll('button, a');
+                    for (const btn of buttons) {
+                        const btnText = btn.textContent.trim();
+                        if (btnText.includes('موافق') || 
+                            btnText.includes('إغلاق') ||
+                            btnText.includes('×')) {
                             
-                            console.log('جدارات أوتو: تم العثور على نافذة سياسة الخصوصية');
-                            
-                            // البحث عن أزرار القبول أو الإغلاق
-                            const acceptButtons = popup.querySelectorAll('button, a, [role="button"]');
-                            for (const btn of acceptButtons) {
-                                const btnText = btn.textContent.trim();
-                                if (btnText.includes('موافق') || 
-                                    btnText.includes('قبول') ||
-                                    btnText.includes('متابعة') ||
-                                    btnText.includes('إغلاق') ||
-                                    btnText.includes('×') ||
-                                    btnText === 'OK') {
-                                    
-                                    console.log('جدارات أوتو: إغلاق نافذة سياسة الخصوصية');
-                                    this.clickElement(btn);
-                                    await this.delay(2000);
-                                    return;
-                                }
-                            }
-                        }
-                        
-                        // نوافذ أخرى (التقييم الرقمي، إلخ)
-                        else {
-                            const closeButton = popup.querySelector('button, [role="button"], .close, [data-dismiss]');
-                            if (closeButton) {
-                                console.log('جدارات أوتو: إغلاق النافذة المنبثقة العامة');
-                                this.clickElement(closeButton);
-                                await this.delay(1000);
-                                return;
-                            }
+                            console.log('جدارات أوتو: إغلاق النافذة المنبثقة');
+                            this.clickElement(btn);
+                            await this.delay(2000);
+                            return;
                         }
                     }
                 }
@@ -827,9 +499,7 @@
             
             for (const button of allButtons) {
                 const text = button.textContent.trim();
-                if (text.includes('استعراض طلب التقديم') || 
-                    text.includes('استعراض الطلب') ||
-                    text.includes('مراجعة الطلب')) {
+                if (text.includes('استعراض طلب التقديم')) {
                     console.log('جدارات أوتو: تم العثور على زر "استعراض طلب التقديم" - الوظيفة مُقدم عليها');
                     return true;
                 }
@@ -841,14 +511,13 @@
         findSubmitButton() {
             console.log('جدارات أوتو: البحث عن زر "تقديم"');
             
-            const allButtons = document.querySelectorAll('button, input[type="submit"], input[type="button"], a');
+            const allButtons = document.querySelectorAll('button, input[type="submit"], a');
             
             for (const button of allButtons) {
                 const text = (button.textContent || button.value || '').trim();
                 const isVisible = button.offsetWidth > 0 && button.offsetHeight > 0;
                 const isEnabled = !button.disabled && !button.classList.contains('disabled');
                 
-                // البحث عن زر "تقديم"
                 if (text === 'تقديم' && isVisible && isEnabled) {
                     console.log('جدارات أوتو: ✅ تم العثور على زر التقديم');
                     return button;
@@ -860,7 +529,7 @@
         }
 
         async applyForJob() {
-            console.log('جدارات أوتو: 🎯 بدء عملية التقديم');
+            console.log('جدارات أوتو: بدء عملية التقديم');
             
             try {
                 await this.delay(2000);
@@ -871,34 +540,21 @@
                     return { success: false, reason: 'لم يتم العثور على زر التقديم' };
                 }
 
-                console.log('جدارات أوتو: ✅ النقر على زر التقديم');
-                
-                // تمرير الزر إلى منتصف الشاشة
-                submitButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                await this.delay(1000);
-                
-                // النقر على زر التقديم
+                console.log('جدارات أوتو: النقر على زر التقديم');
                 this.clickElement(submitButton);
-                
-                console.log('جدارات أوتو: انتظار نوافذ التأكيد...');
                 
                 // انتظار نافذة التأكيد
                 await this.delay(3000);
-                
-                // التعامل مع نافذة التأكيد
                 await this.handleConfirmationDialog();
                 
                 // انتظار نافذة النتيجة
                 await this.delay(3000);
+                const result = await this.handleResultDialog();
                 
-                // التعامل مع نافذة النتيجة
-                const applicationResult = await this.handleApplicationResultDialog();
-                
-                console.log('جدارات أوتو: نتيجة التقديم:', applicationResult);
-                return applicationResult;
+                return result;
 
             } catch (error) {
-                console.error('جدارات أوتو: ❌ خطأ في التقديم:', error);
+                console.error('جدارات أوتو: خطأ في التقديم:', error);
                 return { success: false, reason: error.message };
             }
         }
@@ -906,23 +562,21 @@
         async handleConfirmationDialog() {
             console.log('جدارات أوتو: البحث عن نافذة التأكيد');
             
-            // البحث عن النافذة التي تحتوي على النص المحدد
             const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
             
             for (const dialog of dialogs) {
                 if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
                     const text = dialog.textContent;
                     
-                    // نافذة التأكيد: "هل أنت متأكد من التقديم على وظيفة..."
-                    if (text.includes('هل أنت متأكد من التقديم على وظيفة')) {
-                        console.log('جدارات أوتو: 📝 تم العثور على نافذة التأكيد');
+                    if (text.includes('هل أنت متأكد من التقديم')) {
+                        console.log('جدارات أوتو: تم العثور على نافذة التأكيد');
                         
                         const confirmButton = Array.from(dialog.querySelectorAll('button')).find(btn => {
                             return btn.textContent.trim() === 'تقديم';
                         });
                         
                         if (confirmButton) {
-                            console.log('جدارات أوتو: ✅ النقر على زر "تقديم" في التأكيد');
+                            console.log('جدارات أوتو: النقر على زر التأكيد');
                             this.clickElement(confirmButton);
                             await this.delay(2000);
                             return;
@@ -930,12 +584,10 @@
                     }
                 }
             }
-            
-            console.log('جدارات أوتو: لم يتم العثور على نافذة التأكيد');
         }
 
-        async handleApplicationResultDialog() {
-            console.log('جدارات أوتو: البحث عن نافذة نتيجة التقديم');
+        async handleResultDialog() {
+            console.log('جدارات أوتو: البحث عن نافذة النتيجة');
             
             const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
             
@@ -943,9 +595,9 @@
                 if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
                     const text = dialog.textContent;
                     
-                    // نافذة النجاح: "تم التقديم بنجاح"
+                    // نافذة النجاح
                     if (text.includes('تم التقديم بنجاح')) {
-                        console.log('جدارات أوتو: 🎉 تم التقديم بنجاح');
+                        console.log('جدارات أوتو: تم التقديم بنجاح');
                         
                         const closeButton = this.findCloseButton(dialog);
                         if (closeButton) {
@@ -956,16 +608,11 @@
                         return { success: true, reason: 'تم التقديم بنجاح' };
                     }
                     
-                    // نافذة الرفض: "عذراً ، لا يمكنك التقديم"
-                    else if (text.includes('عذراً ، لا يمكنك التقديم') || 
-                             text.includes('لا يمكنك التقديم') ||
-                             text.includes('غير مؤهل')) {
+                    // نافذة الرفض
+                    else if (text.includes('عذراً ، لا يمكنك التقديم') || text.includes('غير مؤهل')) {
+                        console.log('جدارات أوتو: تم رفض التقديم');
                         
-                        console.log('جدارات أوتو: ❌ تم رفض التقديم');
-                        
-                        // استخراج سبب الرفض
                         const rejectionReason = this.extractRejectionReason(text);
-                        console.log('جدارات أوتو: سبب الرفض:', rejectionReason);
                         
                         const closeButton = this.findCloseButton(dialog);
                         if (closeButton) {
@@ -979,22 +626,248 @@
                             type: 'rejection' 
                         };
                     }
-                    
-                    // نافذة خطأ عام
-                    else if (text.includes('خطأ') || text.includes('فشل') || text.includes('مشكلة')) {
-                        console.log('جدارات أوتو: ⚠️ حدث خطأ في التقديم');
-                        
-                        const errorReason = this.extractErrorReason(text);
-                        
-                        const closeButton = this.findCloseButton(dialog);
-                        if (closeButton) {
-                            this.clickElement(closeButton);
-                            await this.delay(2000);
-                        }
-                        
-                        return { 
-                            success: false, 
-                            reason: errorReason,
-                            type: 'error' 
-                        };
+                }
+            }
+            
+            return { success: false, reason: 'لم يتم العثور على نتيجة', type: 'unknown' };
+        }
+
+        extractRejectionReason(dialogText) {
+            const reasons = [
+                'الملف الشخصي لا يطابق شرط المؤهل التعليمي المطلوب',
+                'لا يطابق شرط الخبرة المطلوبة',
+                'لا يطابق شرط العمر المطلوب',
+                'لا يطابق شرط الجنس المطلوب',
+                'انتهت فترة التقديم'
+            ];
+            
+            for (const reason of reasons) {
+                if (dialogText.includes(reason)) {
+                    return reason;
+                }
+            }
+            
+            return 'سبب غير محدد';
+        }
+
+        findCloseButton(dialog) {
+            const buttons = dialog.querySelectorAll('button');
+            
+            for (const btn of buttons) {
+                const text = btn.textContent.trim().toLowerCase();
+                if (text === 'إغلاق' || text === 'اغلاق' || text === 'موافق') {
+                    return btn;
+                }
+            }
+            
+            return buttons[buttons.length - 1];
+        }
+
+        async goBackToJobList() {
+            console.log('جدارات أوتو: العودة لقائمة الوظائف');
+            
+            window.history.back();
+            await this.waitForNavigation();
+            await this.delay(3000);
+            
+            this.checkPageType();
+            
+            if (this.pageType === 'jobList') {
+                console.log('جدارات أوتو: تم العودة بنجاح');
+                window.scrollTo(0, 0);
+            } else {
+                console.log('جدارات أوتو: قد تكون العودة لم تنجح');
+            }
+        }
+
+        async goToNextPage() {
+            console.log('جدارات أوتو: البحث عن الصفحة التالية');
+            
+            const nextButton = document.querySelector('button[aria-label="go to next page"]:not([disabled])');
+            
+            if (nextButton) {
+                console.log('جدارات أوتو: الانتقال للصفحة التالية');
+                this.currentPage++;
+                this.currentJobIndex = 0;
+                
+                this.clickElement(nextButton);
+                await this.waitForNavigation();
+                await this.delay(4000);
+                
+                await this.processCurrentPage();
+            } else {
+                console.log('جدارات أوتو: انتهت جميع الصفحات');
+                this.sendMessage('AUTOMATION_COMPLETED');
+                this.hideIndicator();
+            }
+        }
+
+        checkLoginStatus() {
+            const allButtons = document.querySelectorAll('button, a');
+            
+            for (const btn of allButtons) {
+                if (btn.textContent.includes('تسجيل الدخول') && btn.offsetWidth > 0) {
+                    return false;
+                }
+            }
+            
+            return true;
+        }
+
+        async saveRejectionData(jobTitle, rejectionReason) {
+            try {
+                const rejectionData = {
+                    jobTitle: jobTitle,
+                    reason: rejectionReason,
+                    timestamp: new Date().toISOString(),
+                    date: new Date().toLocaleDateString('ar-SA'),
+                    time: new Date().toLocaleTimeString('ar-SA')
+                };
+                
+                this.sendMessage('SAVE_REJECTION_DATA', { rejectionData });
+                
+            } catch (error) {
+                console.error('جدارات أوتو: خطأ في حفظ بيانات الرفض:', error);
+            }
+        }
+
+        highlightElement(element) {
+            if (element) {
+                const originalStyle = element.style.cssText;
+                element.style.cssText += `
+                    border: 3px solid #00d4ff !important; 
+                    background: rgba(0, 212, 255, 0.1) !important;
+                `;
+                
+                setTimeout(() => {
+                    element.style.cssText = originalStyle;
+                }, 2000);
+            }
+        }
+
+        clickElement(element) {
+            if (element) {
+                // التأكد من عدم فتح تبويب جديد
+        clickElement(element) {
+            if (element) {
+                // التأكد من عدم فتح تبويب جديد
+                if (element.tagName === 'A') {
+                    element.removeAttribute('target');
+                    element.target = '_self';
+                }
+                
+                // تمرير العنصر إلى منتصف الشاشة
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // النقر الفعلي
+                try {
+                    element.click();
+                } catch (e) {
+                    const event = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    element.dispatchEvent(event);
+                }
+            }
+        }
+
+        async delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        getRandomDelay() {
+            const base = this.settings.delayTime * 1000;
+            const variation = base * 0.3;
+            return base + (Math.random() * 2 - 1) * variation;
+        }
+
+        async waitForNavigation() {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                const maxAttempts = 50;
+                
+                const checkForChange = () => {
+                    attempts++;
+                    if (document.readyState === 'complete' || attempts >= maxAttempts) {
+                        setTimeout(resolve, 500);
+                    } else {
+                        setTimeout(checkForChange, 100);
                     }
+                };
+                checkForChange();
+            });
+        }
+
+        saveCurrentPosition() {
+            const position = {
+                page: this.currentPage,
+                jobIndex: this.currentJobIndex,
+                stats: this.stats,
+                url: window.location.href,
+                timestamp: Date.now()
+            };
+            
+            this.sendMessage('SAVE_POSITION', { position });
+        }
+
+        sendMessage(action, data) {
+            data = data || {};
+            try {
+                const message = {
+                    action: action,
+                    ...data
+                };
+                
+                chrome.runtime.sendMessage(message, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('جدارات أوتو: خطأ في إرسال الرسالة:', chrome.runtime.lastError);
+                    }
+                });
+            } catch (error) {
+                console.error('جدارات أوتو: خطأ في إرسال الرسالة:', error);
+            }
+        }
+    }
+
+    // إنشاء المتغير العام
+    let jadaratAutoContent = null;
+
+    function initializeContent() {
+        try {
+            if (!jadaratAutoContent) {
+                jadaratAutoContent = new JadaratAutoContent();
+                console.log('جدارات أوتو: تم تهيئة المحتوى بنجاح - النسخة النظيفة');
+            }
+        } catch (error) {
+            console.error('جدارات أوتو: خطأ في التهيئة:', error);
+        }
+    }
+
+    // تهيئة المحتوى
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeContent);
+    } else {
+        initializeContent();
+    }
+
+    // مراقبة تغيير URL
+    let lastUrl = location.href;
+    const observer = new MutationObserver(() => {
+        const url = location.href;
+        if (url !== lastUrl) {
+            lastUrl = url;
+            setTimeout(() => {
+                if (!jadaratAutoContent) {
+                    initializeContent();
+                } else {
+                    jadaratAutoContent.checkPageType();
+                }
+            }, 1000);
+        }
+    });
+
+    observer.observe(document, { subtree: true, childList: true });
+
+})();
