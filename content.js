@@ -48,9 +48,11 @@ if (window.jadaratAutoContentLoaded) {
             console.log('🔍 تحليل الصفحة الحالية:', url);
             
             const pageText = document.body.textContent || '';
+            const pageHTML = document.body.innerHTML || '';
             
-            // فحص مؤشرات صفحة تفاصيل الوظيفة
+            // فحص مؤشرات صفحة تفاصيل الوظيفة (أكثر دقة)
             const detailsIndicators = [
+                'وصف الوظيفة',
                 'نوع العمل',
                 'الراتب', 
                 'الجنس',
@@ -58,7 +60,8 @@ if (window.jadaratAutoContentLoaded) {
                 'المؤهل العلمي',
                 'سنوات الخبرة',
                 'تاريخ بداية النشر',
-                'وصف الوظيفة'
+                'الدوام',
+                'طبيعة العمل'
             ];
             
             let detailsScore = 0;
@@ -68,28 +71,57 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
             
-            // فحص وجود روابط متعددة للوظائف
+            // فحص وجود زر التقديم (مؤشر قوي على صفحة التفاصيل)
+            const hasSubmitButton = pageHTML.includes('تقديم') && 
+                                   (pageHTML.includes('button') || pageHTML.includes('btn'));
+            
+            // فحص وجود روابط متعددة للوظائف (مؤشر على القائمة)
             const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
-            const hasMultipleJobs = jobLinks.length >= 2;
+            const hasMultipleJobs = jobLinks.length >= 3; // 3 أو أكثر = قائمة
             
             // فحص وجود pagination
-            const hasPagination = document.querySelector('button[aria-label*="next page"], .pagination');
+            const hasPagination = document.querySelector('button[aria-label*="next page"], .pagination') ||
+                                 pageHTML.includes('pagination');
             
-            // تحديد نوع الصفحة بدقة
-            if (detailsScore >= 4 || (url.includes('JobDetails') && !hasMultipleJobs)) {
+            // فحص عنوان الصفحة
+            const pageTitle = document.title || '';
+            const isJobDetailsInTitle = pageTitle.includes('تفاصيل') || pageTitle.includes('وظيفة');
+            
+            console.log(`📊 تحليل الصفحة:
+                - نقاط التفاصيل: ${detailsScore}/10
+                - زر التقديم: ${hasSubmitButton}
+                - روابط متعددة: ${hasMultipleJobs} (${jobLinks.length})
+                - صفحات: ${hasPagination}
+                - عنوان الصفحة: ${isJobDetailsInTitle}
+                - URL: ${url.includes('JobDetails')}`);
+            
+            // تحديد نوع الصفحة بدقة عالية
+            if ((detailsScore >= 4 || hasSubmitButton || isJobDetailsInTitle) && 
+                url.includes('JobDetails') && 
+                !hasMultipleJobs) {
                 this.pageType = 'jobDetails';
-                console.log('📄 صفحة تفاصيل وظيفة مكتشفة');
+                console.log('📄 صفحة تفاصيل وظيفة مؤكدة');
                 this.analyzeJobDetailsPage();
-            } else if (hasMultipleJobs || url.includes('ExploreJobs') || hasPagination) {
+                
+            } else if (hasMultipleJobs || hasPagination || 
+                      url.includes('ExploreJobs') || 
+                      (!url.includes('JobDetails') && jobLinks.length > 0)) {
                 this.pageType = 'jobList';
-                console.log('📋 صفحة قائمة الوظائف مكتشفة');
+                console.log('📋 صفحة قائمة الوظائف مؤكدة');
                 this.analyzeJobListPage();
-            } else if (url.includes('jadarat.sa') && pageText.includes('البحث عن الوظائف')) {
+                
+            } else if (url.includes('jadarat.sa') && 
+                      (pageText.includes('البحث عن الوظائف') || pageText.includes('الوظائف المتاحة'))) {
                 this.pageType = 'home';
                 console.log('🏠 الصفحة الرئيسية مكتشفة');
+                
             } else {
                 this.pageType = 'unknown';
-                console.log('❓ صفحة غير معروفة');
+                console.log(`❓ نوع صفحة غير محدد:
+                    - URL: ${url}
+                    - تفاصيل: ${detailsScore}
+                    - روابط: ${jobLinks.length}
+                    - تقديم: ${hasSubmitButton}`);
             }
         }
 
@@ -688,14 +720,38 @@ if (window.jadaratAutoContentLoaded) {
 
             // النقر على الوظيفة مع آلية محسنة
             console.log('👆 النقر على رابط الوظيفة');
-            await this.clickElementImproved(jobCard.link);
+            const clickSuccess = await this.clickElementImproved(jobCard.link);
+            
+            if (!clickSuccess) {
+                throw new Error('فشل في النقر على رابط الوظيفة');
+            }
             
             // انتظار التنقل مع تحسينات
             await this.waitForNavigationImproved();
-            await this.wait(4000);
+            await this.wait(3000);
             
             // التحقق من نوع الصفحة
             this.checkPageType();
+            
+            // فحص إضافي للتأكد من الوصول لصفحة التفاصيل
+            let retryCount = 0;
+            const maxRetries = 3;
+            
+            while (this.pageType !== 'jobDetails' && retryCount < maxRetries) {
+                console.log(`⚠️ لم نصل لصفحة التفاصيل بعد، محاولة ${retryCount + 1}/${maxRetries}`);
+                
+                await this.wait(2000);
+                this.checkPageType();
+                retryCount++;
+                
+                // إذا لم نصل للتفاصيل، نحاول النقر مرة أخرى
+                if (this.pageType !== 'jobDetails' && retryCount < maxRetries) {
+                    console.log('🔄 إعادة محاولة النقر...');
+                    await this.clickElementImproved(jobCard.link);
+                    await this.waitForNavigationImproved();
+                    await this.wait(2000);
+                }
+            }
             
             if (this.pageType === 'jobDetails') {
                 console.log('✅ وصلنا لصفحة التفاصيل');
@@ -727,7 +783,7 @@ if (window.jadaratAutoContentLoaded) {
                 await this.goBackToJobList();
                 
             } else {
-                throw new Error('فشل في فتح صفحة التفاصيل');
+                throw new Error(`فشل في الوصول لصفحة التفاصيل بعد ${maxRetries} محاولات. نوع الصفحة الحالي: ${this.pageType}`);
             }
         }
 
@@ -1093,10 +1149,15 @@ if (window.jadaratAutoContentLoaded) {
             if (!element) return false;
             
             try {
+                // حفظ URL الحالي للمقارنة
+                const currentUrl = window.location.href;
+                console.log('🎯 URL الحالي:', currentUrl);
+                
                 // إزالة target لتجنب التبويب الجديد
                 if (element.tagName === 'A') {
                     element.removeAttribute('target');
                     element.target = '_self';
+                    console.log('🔗 رابط الوظيفة:', element.href);
                 }
                 
                 // تمرير العنصر إلى منتصف الشاشة
@@ -1106,41 +1167,81 @@ if (window.jadaratAutoContentLoaded) {
                 });
                 
                 // انتظار التمرير
-                await this.wait(1000);
+                await this.wait(1500);
                 
-                // محاولة النقر المباشر
-                console.log('🎯 محاولة النقر المباشر');
+                // إيقاف أي أحداث أخرى مؤقتاً
+                const stopPropagation = (e) => {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                };
+                
+                document.addEventListener('click', stopPropagation, { capture: true, once: true });
+                
+                // محاولة التنقل المباشر أولاً (الأكثر موثوقية)
+                if (element.href && element.tagName === 'A') {
+                    console.log('🎯 التنقل المباشر للرابط');
+                    window.location.href = element.href;
+                    return true;
+                }
+                
+                // محاولة النقر العادي
+                console.log('🎯 محاولة النقر العادي');
                 element.click();
                 
-                await this.wait(1000);
+                // انتظار قصير للتحقق من التغيير
+                await this.wait(2000);
                 
-                return true;
+                // فحص إذا تغير URL
+                if (window.location.href !== currentUrl) {
+                    console.log('✅ تم التنقل بنجاح');
+                    return true;
+                }
                 
-            } catch (error1) {
-                try {
-                    console.log('🎯 محاولة النقر بالـ Event');
-                    const event = new MouseEvent('click', {
+                // إذا لم يتغير URL، نجرب طرق أخرى
+                console.log('⚠️ لم يتغير URL، جرب طرق أخرى');
+                
+                // محاولة إثارة أحداث مختلفة
+                const events = ['mousedown', 'mouseup', 'click'];
+                for (const eventType of events) {
+                    const event = new MouseEvent(eventType, {
                         view: window,
                         bubbles: true,
-                        cancelable: true
+                        cancelable: true,
+                        button: 0
                     });
                     element.dispatchEvent(event);
-                    
-                    await this.wait(1000);
+                    await this.wait(500);
+                }
+                
+                await this.wait(2000);
+                
+                // فحص مرة أخرى
+                if (window.location.href !== currentUrl) {
+                    console.log('✅ تم التنقل بعد الأحداث المتعددة');
                     return true;
-                    
-                } catch (error2) {
-                    try {
-                        console.log('🎯 محاولة التنقل المباشر');
-                        if (element.href) {
-                            window.location.href = element.href;
+                }
+                
+                // كآخر محاولة - النقر على العنصر الأب
+                if (element.parentElement) {
+                    console.log('🎯 محاولة النقر على العنصر الأب');
+                    const parentLink = element.closest('a');
+                    if (parentLink && parentLink !== element) {
+                        parentLink.click();
+                        await this.wait(2000);
+                        
+                        if (window.location.href !== currentUrl) {
+                            console.log('✅ تم التنقل عبر العنصر الأب');
                             return true;
                         }
-                    } catch (error3) {
-                        console.error('❌ فشل في جميع طرق النقر:', error3);
-                        return false;
                     }
                 }
+                
+                console.log('❌ فشل في جميع محاولات النقر');
+                return false;
+                
+            } catch (error) {
+                console.error('❌ خطأ في النقر المحسن:', error);
+                return false;
             }
         }
 
@@ -1155,12 +1256,13 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         async waitForNavigationImproved() {
-            console.log('⏳ انتظار التنقل...');
+            console.log('⏳ انتظار التنقل المحسن...');
             
             return new Promise((resolve) => {
                 let attempts = 0;
-                const maxAttempts = 100; // زيادة المحاولات
+                const maxAttempts = 150; // زيادة المحاولات
                 const currentUrl = window.location.href;
+                let lastPageContent = document.body.innerHTML.length;
                 
                 const checkForChange = () => {
                     attempts++;
@@ -1168,14 +1270,25 @@ if (window.jadaratAutoContentLoaded) {
                     // فحص تغيير URL
                     const urlChanged = window.location.href !== currentUrl;
                     
+                    // فحص تغيير المحتوى (أكثر دقة)
+                    const currentPageContent = document.body.innerHTML.length;
+                    const contentChanged = Math.abs(currentPageContent - lastPageContent) > 1000;
+                    
                     // فحص حالة التحميل
                     const pageLoaded = document.readyState === 'complete';
                     
-                    if (urlChanged || pageLoaded || attempts >= maxAttempts) {
-                        console.log(`✅ التنقل مكتمل بعد ${attempts} محاولة`);
-                        setTimeout(resolve, 500);
+                    // فحص وجود محتوى جديد (مؤشرات صفحة تفاصيل الوظيفة)
+                    const hasJobDetails = document.body.textContent.includes('وصف الوظيفة') || 
+                                        document.body.textContent.includes('نوع العمل') ||
+                                        document.body.textContent.includes('المؤهل العلمي');
+                    
+                    console.log(`⏳ محاولة ${attempts}/${maxAttempts} - URL: ${urlChanged}, محتوى: ${contentChanged}, تفاصيل: ${hasJobDetails}`);
+                    
+                    if ((urlChanged && contentChanged) || hasJobDetails || attempts >= maxAttempts) {
+                        console.log(`✅ التنقل مكتمل - URL تغير: ${urlChanged}, محتوى تغير: ${contentChanged}, تفاصيل موجودة: ${hasJobDetails}`);
+                        setTimeout(resolve, 1000);
                     } else {
-                        setTimeout(checkForChange, 200);
+                        setTimeout(checkForChange, 300); // فحص كل 300ms
                     }
                 };
                 
