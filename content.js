@@ -208,60 +208,22 @@
         }
 
         async goBackToJobList() {
-            console.log('جدارات أوتو: 🔙 بدء العودة لقائمة الوظائف...');
+            console.log('جدارات أوتو: العودة لقائمة الوظائف باستخدام history.back()');
             
-            let attempts = 0;
-            const maxAttempts = 3;
+            window.history.back();
+            await this.waitForNavigation();
+            await this.delay(3000);
             
-            while (attempts < maxAttempts) {
-                attempts++;
-                console.log(`جدارات أوتو: محاولة العودة رقم ${attempts}`);
-                
-                // العودة باستخدام history.back()
-                window.history.back();
-                await this.waitForNavigation();
-                await this.delay(3000);
-                
-                // التحقق من العودة
-                this.checkPageType();
-                
-                if (this.pageType === 'jobList') {
-                    console.log('جدارات أوتو: ✅ تم العودة لقائمة الوظائف بنجاح');
-                    window.scrollTo(0, 0);
-                    return true;
-                } else {
-                    console.log(`جدارات أوتو: ⚠️ المحاولة ${attempts} فشلت، نوع الصفحة: ${this.pageType}`);
-                    
-                    if (attempts < maxAttempts) {
-                        console.log('جدارات أوتو: إعادة المحاولة...');
-                        await this.delay(2000);
-                    }
-                }
+            // التحقق من العودة
+            this.checkPageType();
+            
+            if (this.pageType === 'jobList') {
+                console.log('جدارات أوتو: ✅ تم العودة لقائمة الوظائف بنجاح');
+                window.scrollTo(0, 0);
+            } else {
+                console.log('جدارات أوتو: ⚠️ قد تكون العودة لم تنجح، نوع الصفحة:', this.pageType);
+                // لا نفعل شيء آخر، فقط نتابع
             }
-            
-            console.log('جدارات أوتو: ❌ فشل في العودة لقائمة الوظائف بعد 3 محاولات');
-            
-            // محاولة أخيرة: الانتقال لرابط قائمة الوظائف مباشرة
-            try {
-                console.log('جدارات أوتو: محاولة الانتقال المباشر لقائمة الوظائف...');
-                const currentUrl = window.location.href;
-                const baseUrl = currentUrl.split('/')[0] + '//' + currentUrl.split('/')[2];
-                const jobListUrl = baseUrl + '/Jadarat/ExploreJobs';
-                
-                window.location.href = jobListUrl;
-                await this.waitForNavigation();
-                await this.delay(4000);
-                
-                this.checkPageType();
-                if (this.pageType === 'jobList') {
-                    console.log('جدارات أوتو: ✅ نجح الانتقال المباشر لقائمة الوظائف');
-                    return true;
-                }
-            } catch (error) {
-                console.error('جدارات أوتو: خطأ في الانتقال المباشر:', error);
-            }
-            
-            return false;
         }
 
         async goToNextPage() {
@@ -570,7 +532,6 @@
                 });
 
                 for (let i = this.currentJobIndex; i < jobCards.length; i++) {
-                    // فحص الحالة قبل كل وظيفة
                     if (!this.isRunning || this.isPaused) {
                         this.saveCurrentPosition();
                         return;
@@ -579,29 +540,19 @@
                     this.currentJobIndex = i;
                     const jobCard = jobCards[i];
                     
-                    console.log(`جدارات أوتو: ▶️ بدء معالجة الوظيفة ${i + 1} من ${jobCards.length}: ${jobCard.title}`);
+                    console.log(`جدارات أوتو: معالجة الوظيفة ${i + 1} من ${jobCards.length}`);
                     
                     await this.processJob(jobCard, i + 1);
-                    
-                    // فحص الحالة بعد معالجة كل وظيفة
-                    if (!this.isRunning || this.isPaused) {
-                        this.saveCurrentPosition();
-                        return;
-                    }
                     
                     const progress = ((i + 1) / jobCards.length) * 100;
                     this.sendMessage('UPDATE_PROGRESS', { 
                         progress: progress, 
-                        text: `تم الانتهاء من الوظيفة ${i + 1} من ${jobCards.length}` 
+                        text: `معالجة الوظيفة ${i + 1} من ${jobCards.length}` 
                     });
 
-                    console.log(`جدارات أوتو: ✅ انتهى من الوظيفة ${i + 1}، الانتقال للوظيفة التالية...`);
-                    
-                    // انتظار قبل الانتقال للوظيفة التالية
                     await this.delay(this.getRandomDelay());
                 }
 
-                console.log('جدارات أوتو: 🎯 انتهى من جميع الوظائف في الصفحة، البحث عن الصفحة التالية...');
                 await this.goToNextPage();
 
             } catch (error) {
@@ -775,18 +726,6 @@
                     // العودة لقائمة الوظائف
                     await this.goBackToJobList();
                     
-                    // التأكد من العودة وإعادة فحص نوع الصفحة
-                    await this.delay(2000);
-                    this.checkPageType();
-                    
-                    // إذا لم نعد لقائمة الوظائف، محاولة مرة أخرى
-                    if (this.pageType !== 'jobList') {
-                        console.log('جدارات أوتو: ⚠️ لم نعد لقائمة الوظائف، محاولة مرة أخرى');
-                        await this.goBackToJobList();
-                        await this.delay(3000);
-                        this.checkPageType();
-                    }
-                    
                 } else {
                     throw new Error('لم يتم فتح صفحة تفاصيل الوظيفة');
                 }
@@ -805,8 +744,6 @@
                 
                 try {
                     await this.goBackToJobList();
-                    await this.delay(2000);
-                    this.checkPageType();
                 } catch (backError) {
                     console.error('جدارات أوتو: خطأ في العودة:', backError);
                 }
