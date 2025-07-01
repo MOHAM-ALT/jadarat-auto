@@ -1,4 +1,4 @@
-// جدارات أوتو - Popup Script المُصحح
+// جدارات أوتو - Popup Script المُصحح والمبسط
 class JadaratAutoPopup {
     constructor() {
         this.isRunning = false;
@@ -7,6 +7,7 @@ class JadaratAutoPopup {
         this.stats = {
             applied: 0,
             skipped: 0,
+            rejected: 0,
             total: 0
         };
         
@@ -24,6 +25,8 @@ class JadaratAutoPopup {
         this.resumeBtn = document.getElementById('resumeBtn');
         this.restartBtn = document.getElementById('restartBtn');
         this.closeBtn = document.getElementById('closeBtn');
+        this.exportBtn = document.getElementById('exportBtn');
+        this.clearRejectionBtn = document.getElementById('clearRejectionBtn');
 
         // Settings
         this.delayRange = document.getElementById('delayRange');
@@ -34,6 +37,7 @@ class JadaratAutoPopup {
         // Statistics
         this.appliedCount = document.getElementById('appliedCount');
         this.skippedCount = document.getElementById('skippedCount');
+        this.rejectedCount = document.getElementById('rejectedCount');
         this.totalCount = document.getElementById('totalCount');
 
         // Progress
@@ -41,6 +45,9 @@ class JadaratAutoPopup {
         this.progressText = document.getElementById('progressText');
         this.currentJob = document.getElementById('currentJob');
 
+        // Rejection info
+        this.rejectionInfo = document.getElementById('rejectionInfo');
+        
         // Status
         this.statusIndicator = document.getElementById('statusIndicator');
         this.statusText = document.getElementById('statusText');
@@ -54,6 +61,8 @@ class JadaratAutoPopup {
         this.resumeBtn.addEventListener('click', () => this.resumeAutomation());
         this.restartBtn.addEventListener('click', () => this.restartAutomation());
         this.closeBtn.addEventListener('click', () => window.close());
+        this.exportBtn.addEventListener('click', () => this.exportRejectionData());
+        this.clearRejectionBtn.addEventListener('click', () => this.clearRejectionData());
 
         // Settings
         this.delayRange.addEventListener('input', (e) => {
@@ -76,7 +85,7 @@ class JadaratAutoPopup {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             this.currentTab = tab;
 
-            if (!tab.url.includes('jadarat.sa')) {
+            if (!tab.url || !tab.url.includes('jadarat.sa')) {
                 this.updateStatus('disconnected', 'يرجى الانتقال لموقع جدارات');
                 this.showError('يرجى الانتقال إلى موقع جدارات (jadarat.sa)');
                 this.startBtn.disabled = true;
@@ -164,6 +173,9 @@ class JadaratAutoPopup {
             if (result.lastPosition) {
                 this.resumeBtn.disabled = false;
             }
+
+            // Load rejection data info
+            this.loadRejectionInfo();
 
         } catch (error) {
             console.error('Error loading settings:', error);
@@ -304,7 +316,7 @@ class JadaratAutoPopup {
             await chrome.storage.local.remove(['lastPosition']);
             
             // Reset stats
-            this.stats = { applied: 0, skipped: 0, total: 0 };
+            this.stats = { applied: 0, skipped: 0, rejected: 0, total: 0 };
             this.updateStats();
             await this.saveSettings();
             
@@ -328,13 +340,15 @@ class JadaratAutoPopup {
                 break;
                 
             case 'UPDATE_CURRENT_JOB':
-                this.updateCurrentJob(message.jobTitle, message.status);
+                this.updateCurrentJob(message.jobTitle, message.status, message.reason);
                 break;
                 
             case 'UPDATE_STATS':
                 this.stats = message.stats;
                 this.updateStats();
                 this.saveSettings();
+                // Update rejection info when stats change
+                this.loadRejectionInfo();
                 break;
                 
             case 'AUTOMATION_COMPLETED':
@@ -352,9 +366,10 @@ class JadaratAutoPopup {
     }
 
     updateStats() {
-        if (this.appliedCount) this.appliedCount.textContent = this.stats.applied;
-        if (this.skippedCount) this.skippedCount.textContent = this.stats.skipped;
-        if (this.totalCount) this.totalCount.textContent = this.stats.total;
+        if (this.appliedCount) this.appliedCount.textContent = this.stats.applied || 0;
+        if (this.skippedCount) this.skippedCount.textContent = this.stats.skipped || 0;
+        if (this.rejectedCount) this.rejectedCount.textContent = this.stats.rejected || 0;
+        if (this.totalCount) this.totalCount.textContent = this.stats.total || 0;
     }
 
     setProgress(percentage, text) {
@@ -366,19 +381,25 @@ class JadaratAutoPopup {
         }
     }
 
-    updateCurrentJob(jobTitle, status) {
+    updateCurrentJob(jobTitle, status, reason = '') {
         if (!this.currentJob) return;
         
         const statusColors = {
             'processing': '#ffc107',
             'success': '#00ff88',
             'error': '#ff4545',
-            'skipped': '#7d2ae8'
+            'skipped': '#7d2ae8',
+            'rejected': '#ff9800'
         };
+
+        let statusText = this.getStatusText(status);
+        if (reason && (status === 'rejected' || status === 'error')) {
+            statusText += ` (${reason})`;
+        }
 
         this.currentJob.innerHTML = `
             <span class="job-status" style="color: ${statusColors[status] || '#7d2ae8'}">
-                ${jobTitle} - ${this.getStatusText(status)}
+                ${jobTitle} - ${statusText}
             </span>
         `;
     }
@@ -388,7 +409,8 @@ class JadaratAutoPopup {
             'processing': 'جاري المعالجة...',
             'success': 'تم التقديم بنجاح',
             'error': 'فشل التقديم',
-            'skipped': 'تم التخطي'
+            'skipped': 'تم التخطي',
+            'rejected': 'تم الرفض'
         };
         return statusTexts[status] || 'غير معروف';
     }
@@ -419,10 +441,18 @@ class JadaratAutoPopup {
         
         this.updateStatus('connected', 'مكتمل');
         this.setProgress(100, 'تم الانتهاء من جميع الوظائف');
+        
+        // Create summary message
+        const summary = `تم الانتهاء! النتائج:
+• تم التقديم: ${this.stats.applied || 0}
+• تم الرفض: ${this.stats.rejected || 0}  
+• تم التخطي: ${this.stats.skipped || 0}
+• الإجمالي: ${this.stats.total || 0}`;
+        
         this.currentJob.innerHTML = '<span class="job-status" style="color: #00ff88">تم الانتهاء بنجاح!</span>';
         
         this.playSound('complete');
-        this.showNotification('تم الانتهاء من التقديم على جميع الوظائف المتاحة!');
+        this.showNotification(summary);
     }
 
     onAutomationError(error) {
@@ -445,8 +475,91 @@ class JadaratAutoPopup {
         }
     }
 
+    async loadRejectionInfo() {
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'GET_REJECTION_DATA' });
+            const rejectionData = response?.rejectionData || [];
+            
+            if (rejectionData.length > 0) {
+                this.rejectionInfo.innerHTML = `
+                    <span class="info-text">
+                        📊 تم حفظ ${rejectionData.length} حالة رفض
+                    </span>
+                `;
+                this.exportBtn.disabled = false;
+                this.clearRejectionBtn.disabled = false;
+            } else {
+                this.rejectionInfo.innerHTML = `
+                    <span class="info-text">لا توجد بيانات رفض بعد</span>
+                `;
+                this.exportBtn.disabled = true;
+                this.clearRejectionBtn.disabled = false;
+            }
+        } catch (error) {
+            console.error('Error loading rejection info:', error);
+        }
+    }
+
+    async exportRejectionData() {
+        try {
+            this.exportBtn.disabled = true;
+            this.exportBtn.innerHTML = '<span class="btn-icon">⏳</span> جاري التصدير...';
+            
+            const response = await chrome.runtime.sendMessage({ action: 'EXPORT_REJECTION_DATA' });
+            
+            if (response?.exportData && response.exportData.success) {
+                // Create download link
+                const link = document.createElement('a');
+                link.href = response.exportData.url;
+                link.download = response.exportData.filename;
+                link.click();
+                
+                // Clean up
+                setTimeout(() => {
+                    URL.revokeObjectURL(response.exportData.url);
+                }, 100);
+                
+                this.showNotification(`تم تصدير ${response.exportData.count} حالة رفض بنجاح`);
+                
+            } else {
+                this.showError(response?.exportData?.message || 'فشل في تصدير البيانات');
+            }
+            
+        } catch (error) {
+            console.error('Error exporting rejection data:', error);
+            this.showError('خطأ في تصدير البيانات');
+        } finally {
+            this.exportBtn.disabled = false;
+            this.exportBtn.innerHTML = '<span class="btn-icon">📥</span> تصدير للاكسل';
+        }
+    }
+
+    async clearRejectionData() {
+        try {
+            const confirmClear = confirm('هل أنت متأكد من مسح جميع بيانات الرفض؟\nلن يمكن استرجاعها بعد الحذف.');
+            
+            if (confirmClear) {
+                this.clearRejectionBtn.disabled = true;
+                this.clearRejectionBtn.innerHTML = '<span class="btn-icon">⏳</span> جاري المسح...';
+                
+                await chrome.runtime.sendMessage({ action: 'CLEAR_REJECTION_DATA' });
+                
+                // Update UI
+                await this.loadRejectionInfo();
+                this.showNotification('تم مسح بيانات الرفض بنجاح');
+            }
+            
+        } catch (error) {
+            console.error('Error clearing rejection data:', error);
+            this.showError('خطأ في مسح البيانات');
+        } finally {
+            this.clearRejectionBtn.disabled = false;
+            this.clearRejectionBtn.innerHTML = '<span class="btn-icon">🗑</span> مسح البيانات';
+        }
+    }
+
     playSound(type) {
-        if (!this.soundToggle.checked) return;
+        if (!this.soundToggle?.checked) return;
         
         try {
             // Create simple beep sounds using Web Audio API
@@ -481,7 +594,7 @@ class JadaratAutoPopup {
     }
 
     showNotification(message) {
-        if (this.soundToggle.checked) {
+        if (this.soundToggle?.checked) {
             try {
                 chrome.notifications.create({
                     type: 'basic',

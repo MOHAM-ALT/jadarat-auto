@@ -1,4 +1,4 @@
-// جدارات أوتو - Background Service Worker
+// جدارات أوتو - Background Service Worker المُحسن
 
 class JadaratAutoBackground {
     constructor() {
@@ -48,8 +48,10 @@ class JadaratAutoBackground {
             stats: {
                 applied: 0,
                 skipped: 0,
+                rejected: 0,
                 total: 0
             },
+            rejectionData: [],
             isFirstRun: true
         };
 
@@ -69,6 +71,16 @@ class JadaratAutoBackground {
                 ...currentSettings,
                 version: chrome.runtime.getManifest().version
             };
+
+            // Add rejection data array if not exists
+            if (!updatedSettings.rejectionData) {
+                updatedSettings.rejectionData = [];
+            }
+
+            // Add rejected stat if not exists
+            if (updatedSettings.stats && !updatedSettings.stats.rejected) {
+                updatedSettings.stats.rejected = 0;
+            }
 
             await chrome.storage.local.set(updatedSettings);
         } catch (error) {
@@ -91,6 +103,25 @@ class JadaratAutoBackground {
                     await this.logActivity(message.activity);
                     break;
 
+                case 'SAVE_REJECTION_DATA':
+                    await this.saveRejectionData(message.rejectionData);
+                    break;
+
+                case 'GET_REJECTION_DATA':
+                    const rejectionData = await this.getRejectionData();
+                    sendResponse({ rejectionData });
+                    break;
+
+                case 'EXPORT_REJECTION_DATA':
+                    const exportData = await this.exportRejectionDataToCSV();
+                    sendResponse({ exportData });
+                    break;
+
+                case 'CLEAR_REJECTION_DATA':
+                    await this.clearRejectionData();
+                    sendResponse({ success: true });
+                    break;
+
                 case 'CHECK_PERMISSIONS':
                     const hasPermissions = await this.checkPermissions();
                     sendResponse({ hasPermissions });
@@ -104,6 +135,90 @@ class JadaratAutoBackground {
             }
         } catch (error) {
             console.error('Error handling message:', error);
+        }
+    }
+
+    async saveRejectionData(rejectionData) {
+        try {
+            console.log('حفظ بيانات الرفض:', rejectionData);
+            
+            // Get existing rejection data
+            const result = await chrome.storage.local.get(['rejectionData']);
+            const existingData = result.rejectionData || [];
+            
+            // Add new rejection data
+            existingData.push(rejectionData);
+            
+            // Keep only last 1000 rejections to prevent storage bloat
+            if (existingData.length > 1000) {
+                existingData.splice(0, existingData.length - 1000);
+            }
+            
+            // Save back to storage
+            await chrome.storage.local.set({ rejectionData: existingData });
+            
+            console.log(`تم حفظ بيانات الرفض. إجمالي الرفض: ${existingData.length}`);
+            
+        } catch (error) {
+            console.error('Error saving rejection data:', error);
+        }
+    }
+
+    async getRejectionData() {
+        try {
+            const result = await chrome.storage.local.get(['rejectionData']);
+            return result.rejectionData || [];
+        } catch (error) {
+            console.error('Error getting rejection data:', error);
+            return [];
+        }
+    }
+
+    async exportRejectionDataToCSV() {
+        try {
+            const rejectionData = await this.getRejectionData();
+            
+            if (rejectionData.length === 0) {
+                return { success: false, message: 'لا توجد بيانات رفض للتصدير' };
+            }
+            
+            // Create CSV header
+            const csvHeader = 'التاريخ,الوقت,عنوان الوظيفة,سبب الرفض\n';
+            
+            // Create CSV content
+            const csvContent = rejectionData.map(item => {
+                return `"${item.date}","${item.time}","${item.jobTitle}","${item.reason}"`;
+            }).join('\n');
+            
+            const fullCSV = csvHeader + csvContent;
+            
+            // Create blob and download URL
+            const blob = new Blob(['\ufeff' + fullCSV], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().split('T')[0];
+            const filename = `jadarat_rejections_${timestamp}.csv`;
+            
+            return {
+                success: true,
+                url: url,
+                filename: filename,
+                count: rejectionData.length
+            };
+            
+        } catch (error) {
+            console.error('Error exporting rejection data:', error);
+            return { success: false, message: 'خطأ في تصدير البيانات' };
+        }
+    }
+
+    async clearRejectionData() {
+        try {
+            await chrome.storage.local.set({ rejectionData: [] });
+            console.log('تم مسح بيانات الرفض');
+        } catch (error) {
+            console.error('Error clearing rejection data:', error);
         }
     }
 
@@ -268,6 +383,13 @@ class JadaratAutoBackground {
                     cleanedData[key] = result[key].filter(
                         msg => msg.timestamp > hourAgo
                     );
+                } else if (key === 'rejectionData') {
+                    // Keep rejection data but limit to last 1000 entries
+                    if (result[key] && result[key].length > 1000) {
+                        cleanedData[key] = result[key].slice(-1000);
+                    } else {
+                        cleanedData[key] = result[key];
+                    }
                 } else {
                     // Keep other data as is
                     cleanedData[key] = result[key];

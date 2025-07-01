@@ -1,4 +1,4 @@
-// جدارات أوتو - Content Script المُحسن والمُصحح نهائياً
+// جدارات أوتو - Content Script المُصحح والمبسط
 (function() {
     'use strict';
     
@@ -22,6 +22,7 @@
             this.stats = {
                 applied: 0,
                 skipped: 0,
+                rejected: 0,
                 total: 0
             };
 
@@ -45,10 +46,9 @@
             const url = window.location.href;
             console.log('جدارات أوتو: فحص نوع الصفحة - URL:', url);
             
-            // فحص بناءً على المعلومات التي قدمتها
             const pageText = document.body.textContent;
             
-            // مؤشرات صفحة تفاصيل الوظيفة (بناءً على HTML الذي أرسلته)
+            // مؤشرات صفحة تفاصيل الوظيفة
             const detailsIndicators = [
                 'نوع العمل',
                 'الراتب',
@@ -67,17 +67,17 @@
                 }
             }
             
-            // فحص وجود عدة روابط وظائف (مؤشر قائمة الوظائف)
+            // فحص وجود عدة روابط وظائف
             const jobLinks = document.querySelectorAll('a[data-link][href*="/Jadarat/JobDetails"]');
             const hasMultipleJobs = jobLinks.length >= 2;
             
-            // تحديد نوع الصفحة بدقة
+            // تحديد نوع الصفحة
             if (detailsScore >= 4) {
                 this.pageType = 'jobDetails';
-                console.log('جدارات أوتو: 📄 صفحة تفاصيل الوظيفة - مؤشرات:', detailsScore);
+                console.log('جدارات أوتو: 📄 صفحة تفاصيل الوظيفة');
             } else if (hasMultipleJobs || url.includes('ExploreJobs') || url.includes('JobTab=1')) {
                 this.pageType = 'jobList';
-                console.log('جدارات أوتو: 📋 صفحة قائمة الوظائف - وظائف:', jobLinks.length);
+                console.log('جدارات أوتو: 📋 صفحة قائمة الوظائف');
             } else {
                 this.pageType = 'unknown';
                 console.log('جدارات أوتو: ❓ صفحة غير معروفة');
@@ -169,7 +169,7 @@
         async startAutomation() {
             console.log('جدارات أوتو: بدء الأتمتة');
             
-            // فحص تسجيل الدخول بناءً على ردك
+            // فحص تسجيل الدخول
             const isLoggedIn = this.checkLoginStatus();
             if (!isLoggedIn) {
                 this.sendMessage('AUTOMATION_ERROR', { 
@@ -219,7 +219,7 @@
             try {
                 console.log('جدارات أوتو: معالجة الصفحة الحالية');
                 
-                // انتظار 4 ثواني لصفحة الوظائف (بناءً على ردك)
+                // انتظار 4 ثواني لصفحة الوظائف
                 await this.delay(4000);
                 
                 const jobCards = this.getJobCards();
@@ -290,7 +290,7 @@
                 const jobContainer = this.findJobContainer(link);
                 
                 if (jobContainer) {
-                    // فحص حالة التقديم بناءً على ردك
+                    // فحص حالة التقديم
                     const alreadyApplied = this.checkIfAlreadyApplied(jobContainer);
                     
                     if (!alreadyApplied) {
@@ -334,7 +334,7 @@
         }
 
         checkIfAlreadyApplied(container) {
-            // فحص الأيقونة والنص بناءً على ردك
+            // فحص الأيقونة والنص
             const tickIcon = container.querySelector('img[src*="tickcircle.svg"]');
             if (tickIcon) {
                 console.log('جدارات أوتو: تم العثور على أيقونة "تم التقدم"');
@@ -363,11 +363,11 @@
                 // تمييز الرابط بصرياً
                 this.highlightElement(jobCard.link);
 
-                // النقر على رابط الوظيفة (بناءً على ردك: لا يفتح تبويب جديد)
+                // النقر على رابط الوظيفة
                 console.log('جدارات أوتو: النقر على رابط الوظيفة');
                 this.clickElement(jobCard.link);
                 
-                // انتظار 3 ثواني لصفحة التفاصيل (بناءً على ردك)
+                // انتظار 3 ثواني لصفحة التفاصيل
                 await this.waitForNavigation();
                 await this.delay(3000);
                 
@@ -398,11 +398,28 @@
                                 status: 'success' 
                             });
                             console.log('جدارات أوتو: تم التقديم بنجاح');
+                            
+                        } else if (applicationResult.type === 'rejection') {
+                            // حالة الرفض
+                            this.stats.rejected = (this.stats.rejected || 0) + 1;
+                            
+                            // حفظ سبب الرفض
+                            this.saveRejectionData(jobTitle, applicationResult.reason);
+                            
+                            this.sendMessage('UPDATE_CURRENT_JOB', { 
+                                jobTitle: jobTitle, 
+                                status: 'rejected',
+                                reason: applicationResult.reason
+                            });
+                            console.log('جدارات أوتو: تم رفض التقديم -', applicationResult.reason);
+                            
                         } else {
+                            // حالة خطأ تقني
                             this.stats.skipped++;
                             this.sendMessage('UPDATE_CURRENT_JOB', { 
                                 jobTitle: jobTitle, 
-                                status: 'error' 
+                                status: 'error',
+                                reason: applicationResult.reason
                             });
                             console.log('جدارات أوتو: فشل التقديم -', applicationResult.reason);
                         }
@@ -411,7 +428,7 @@
                     this.stats.total++;
                     this.sendMessage('UPDATE_STATS', { stats: this.stats });
 
-                    // العودة لقائمة الوظائف باستخدام history.back() (بناءً على ردك)
+                    // العودة لقائمة الوظائف
                     await this.goBackToJobList();
                 } else {
                     throw new Error('لم يتم فتح صفحة تفاصيل الوظيفة');
@@ -442,7 +459,7 @@
             
             await this.delay(2000);
             
-            // البحث عن زر "استعراض طلب التقديم" بناءً على ردك
+            // البحث عن زر "استعراض طلب التقديم"
             const allButtons = document.querySelectorAll('button, a');
             
             for (const button of allButtons) {
@@ -468,7 +485,7 @@
                 const isVisible = button.offsetWidth > 0 && button.offsetHeight > 0;
                 const isEnabled = !button.disabled && !button.classList.contains('disabled');
                 
-                // البحث عن زر "تقديم" بناءً على ردك
+                // البحث عن زر "تقديم"
                 if (text === 'تقديم' && isVisible && isEnabled) {
                     console.log('جدارات أوتو: ✅ تم العثور على زر التقديم');
                     return button;
@@ -502,20 +519,20 @@
                 
                 console.log('جدارات أوتو: انتظار نوافذ التأكيد...');
                 
-                // انتظار نافذة التأكيد (بناءً على ردك)
+                // انتظار نافذة التأكيد
                 await this.delay(3000);
                 
                 // التعامل مع نافذة التأكيد
                 await this.handleConfirmationDialog();
                 
-                // انتظار نافذة النجاح
+                // انتظار نافذة النتيجة
                 await this.delay(3000);
                 
-                // التعامل مع نافذة النجاح
-                await this.handleSuccessDialog();
+                // التعامل مع نافذة النتيجة
+                const applicationResult = await this.handleApplicationResultDialog();
                 
-                console.log('جدارات أوتو: ✅ تمت عملية التقديم بنجاح');
-                return { success: true };
+                console.log('جدارات أوتو: نتيجة التقديم:', applicationResult);
+                return applicationResult;
 
             } catch (error) {
                 console.error('جدارات أوتو: ❌ خطأ في التقديم:', error);
@@ -526,7 +543,7 @@
         async handleConfirmationDialog() {
             console.log('جدارات أوتو: البحث عن نافذة التأكيد');
             
-            // البحث عن النافذة التي تحتوي على النص المحدد (بناءً على ردك)
+            // البحث عن النافذة التي تحتوي على النص المحدد
             const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
             
             for (const dialog of dialogs) {
@@ -554,8 +571,8 @@
             console.log('جدارات أوتو: لم يتم العثور على نافذة التأكيد');
         }
 
-        async handleSuccessDialog() {
-            console.log('جدارات أوتو: البحث عن نافذة النجاح');
+        async handleApplicationResultDialog() {
+            console.log('جدارات أوتو: البحث عن نافذة نتيجة التقديم');
             
             const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
             
@@ -565,30 +582,125 @@
                     
                     // نافذة النجاح: "تم التقديم بنجاح"
                     if (text.includes('تم التقديم بنجاح')) {
-                        console.log('جدارات أوتو: 🎉 تم العثور على نافذة النجاح');
+                        console.log('جدارات أوتو: 🎉 تم التقديم بنجاح');
                         
-                        const closeButton = Array.from(dialog.querySelectorAll('button')).find(btn => {
-                            const btnText = btn.textContent.trim();
-                            return btnText === 'اغلاق' || btnText === 'إغلاق';
-                        });
-                        
+                        const closeButton = this.findCloseButton(dialog);
                         if (closeButton) {
-                            console.log('جدارات أوتو: ✅ إغلاق نافذة النجاح');
                             this.clickElement(closeButton);
                             await this.delay(2000);
-                            return;
                         }
+                        
+                        return { success: true, reason: 'تم التقديم بنجاح' };
+                    }
+                    
+                    // نافذة الرفض: "عذراً ، لا يمكنك التقديم"
+                    else if (text.includes('عذراً ، لا يمكنك التقديم') || 
+                             text.includes('لا يمكنك التقديم') ||
+                             text.includes('غير مؤهل')) {
+                        
+                        console.log('جدارات أوتو: ❌ تم رفض التقديم');
+                        
+                        // استخراج سبب الرفض
+                        const rejectionReason = this.extractRejectionReason(text);
+                        console.log('جدارات أوتو: سبب الرفض:', rejectionReason);
+                        
+                        const closeButton = this.findCloseButton(dialog);
+                        if (closeButton) {
+                            this.clickElement(closeButton);
+                            await this.delay(2000);
+                        }
+                        
+                        return { 
+                            success: false, 
+                            reason: rejectionReason,
+                            type: 'rejection' 
+                        };
+                    }
+                    
+                    // نافذة خطأ عام
+                    else if (text.includes('خطأ') || text.includes('فشل') || text.includes('مشكلة')) {
+                        console.log('جدارات أوتو: ⚠️ حدث خطأ في التقديم');
+                        
+                        const errorReason = this.extractErrorReason(text);
+                        
+                        const closeButton = this.findCloseButton(dialog);
+                        if (closeButton) {
+                            this.clickElement(closeButton);
+                            await this.delay(2000);
+                        }
+                        
+                        return { 
+                            success: false, 
+                            reason: errorReason,
+                            type: 'error' 
+                        };
                     }
                 }
             }
             
-            console.log('جدارات أوتو: لم يتم العثور على نافذة النجاح');
+            console.log('جدارات أوتو: لم يتم العثور على نافذة النتيجة');
+            return { success: false, reason: 'لم يتم العثور على نافذة النتيجة', type: 'unknown' };
+        }
+
+        extractRejectionReason(dialogText) {
+            // استخراج سبب الرفض من النص
+            const rejectionReasons = [
+                'الملف الشخصي لا يطابق شرط المؤهل التعليمي المطلوب',
+                'لا يطابق شرط الخبرة المطلوبة',
+                'لا يطابق شرط العمر المطلوب',
+                'لا يطابق شرط الجنس المطلوب',
+                'لا يطابق شرط الجنسية المطلوبة',
+                'لا يطابق شرط المنطقة المطلوبة',
+                'انتهت فترة التقديم',
+                'تم الوصول للعدد المطلوب'
+            ];
+            
+            for (const reason of rejectionReasons) {
+                if (dialogText.includes(reason)) {
+                    return reason;
+                }
+            }
+            
+            // إذا لم نجد سبب محدد، نعيد النص كاملاً
+            const lines = dialogText.split('\n').filter(line => line.trim().length > 10);
+            return lines.find(line => 
+                line.includes('لا يطابق') || 
+                line.includes('غير مؤهل') || 
+                line.includes('انتهت') ||
+                line.includes('تم الوصول')
+            ) || 'سبب غير محدد';
+        }
+
+        extractErrorReason(dialogText) {
+            // استخراج سبب الخطأ التقني
+            const lines = dialogText.split('\n').filter(line => line.trim().length > 5);
+            return lines.find(line => 
+                line.includes('خطأ') || 
+                line.includes('فشل') ||
+                line.includes('مشكلة')
+            ) || 'خطأ تقني غير محدد';
+        }
+
+        findCloseButton(dialog) {
+            // البحث عن أزرار الإغلاق المختلفة
+            const closeButtons = dialog.querySelectorAll('button');
+            
+            for (const btn of closeButtons) {
+                const text = btn.textContent.trim().toLowerCase();
+                if (text === 'إغلاق' || text === 'اغلاق' || 
+                    text === 'موافق' || text === 'ok' || text === 'تم') {
+                    return btn;
+                }
+            }
+            
+            // إذا لم نجد، نأخذ آخر زر
+            return closeButtons[closeButtons.length - 1];
         }
 
         async goBackToJobList() {
             console.log('جدارات أوتو: العودة لقائمة الوظائف باستخدام history.back()');
             
-            // استخدام history.back() بناءً على ردك
+            // استخدام history.back()
             window.history.back();
             await this.waitForNavigation();
             await this.delay(2000);
@@ -643,6 +755,26 @@
             return true;
         }
 
+        async saveRejectionData(jobTitle, rejectionReason) {
+            try {
+                const rejectionData = {
+                    jobTitle: jobTitle,
+                    reason: rejectionReason,
+                    timestamp: new Date().toISOString(),
+                    date: new Date().toLocaleDateString('ar-SA'),
+                    time: new Date().toLocaleTimeString('ar-SA')
+                };
+                
+                console.log('جدارات أوتو: حفظ بيانات الرفض:', rejectionData);
+                
+                // إرسال للخلفية لحفظها
+                this.sendMessage('SAVE_REJECTION_DATA', { rejectionData });
+                
+            } catch (error) {
+                console.error('جدارات أوتو: خطأ في حفظ بيانات الرفض:', error);
+            }
+        }
+
         highlightElement(element) {
             if (element) {
                 const originalStyle = element.style.cssText;
@@ -662,7 +794,7 @@
             if (element) {
                 console.log('جدارات أوتو: النقر على العنصر:', element);
                 
-                // التأكد من عدم فتح تبويب جديد (بناءً على ردك)
+                // التأكد من عدم فتح تبويب جديد
                 if (element.tagName === 'A') {
                     element.removeAttribute('target');
                     element.target = '_self';
@@ -759,7 +891,7 @@
         try {
             if (!jadaratAutoContent) {
                 jadaratAutoContent = new JadaratAutoContent();
-                console.log('جدارات أوتو: تم تهيئة المحتوى بنجاح - الإصدار المُحسن');
+                console.log('جدارات أوتو: تم تهيئة المحتوى بنجاح - الإصدار المُصحح');
             }
         } catch (error) {
             console.error('جدارات أوتو: خطأ في التهيئة:', error);

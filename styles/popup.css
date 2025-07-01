@@ -1,4 +1,4 @@
-/* جدارات أوتو - Cyberpunk Dark Theme */
+/* جدارات أوتو - Cyberpunk Dark Theme المُحسن */
 
 * {
     margin: 0;
@@ -140,13 +140,24 @@ body {
     animation: pulse 2s infinite;
 }
 
+.feature-badge {
+    background: linear-gradient(45deg, #00ff88, #00d4ff);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: bold;
+    margin-right: auto;
+    animation: pulse 2s infinite;
+}
+
 @keyframes pulse {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.05); }
 }
 
 /* Button Styles */
-.control-buttons {
+.control-buttons, .resume-buttons, .rejection-buttons {
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
@@ -242,6 +253,18 @@ body {
     background: #ff9800;
     color: white;
     box-shadow: 0 0 15px rgba(255, 152, 0, 0.5);
+}
+
+.btn-success {
+    background: rgba(0, 255, 136, 0.2);
+    color: #00ff88;
+    border: 1px solid #00ff88;
+}
+
+.btn-success:hover {
+    background: #00ff88;
+    color: #000;
+    box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
 }
 
 .btn:disabled {
@@ -373,7 +396,7 @@ input:checked + .slider:before {
 /* Statistics */
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 12px;
 }
 
@@ -463,10 +486,20 @@ input:checked + .slider:before {
     font-weight: 500;
 }
 
-/* Resume Buttons */
-.resume-buttons {
-    display: flex;
-    gap: 10px;
+/* Rejection Data Styles */
+.rejection-info {
+    background: rgba(255, 152, 0, 0.1);
+    border: 1px solid rgba(255, 152, 0, 0.3);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-top: 10px;
+    font-size: 12px;
+    text-align: center;
+}
+
+.info-text {
+    color: #ff9800;
+    font-weight: 500;
 }
 
 /* Footer */

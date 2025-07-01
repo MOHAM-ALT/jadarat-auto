@@ -92,6 +92,10 @@
                         <div class="stat-label">تم التقديم</div>
                     </div>
                     <div class="stat-card">
+                        <div class="stat-number" id="rejectedCount">0</div>
+                        <div class="stat-label">تم الرفض</div>
+                    </div>
+                    <div class="stat-card">
                         <div class="stat-number" id="skippedCount">0</div>
                         <div class="stat-label">تم التخطي</div>
                     </div>
@@ -140,6 +144,30 @@
                 </div>
             </div>
 
+            <!-- Rejection Data Section -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">📋</span>
+                    <h2>بيانات الرفض</h2>
+                    <span class="feature-badge">جديد</span>
+                </div>
+
+                <div class="rejection-buttons">
+                    <button class="btn btn-success" id="exportBtn">
+                        <span class="btn-icon">📥</span>
+                        تصدير للاكسل
+                    </button>
+                    <button class="btn btn-warning" id="clearRejectionBtn">
+                        <span class="btn-icon">🗑</span>
+                        مسح البيانات
+                    </button>
+                </div>
+
+                <div class="rejection-info" id="rejectionInfo">
+                    <span class="info-text">لا توجد بيانات رفض بعد</span>
+                </div>
+            </div>
+
         </div>
 
         <!-- Footer -->
@@ -148,7 +176,7 @@
                 <span class="status-dot"></span>
                 <span id="statusText">غير متصل</span>
             </div>
-            <div class="version">v1.0.0</div>
+            <div class="version">v1.0.1</div>
         </div>
 
     </div>
