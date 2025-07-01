@@ -1,4 +1,4 @@
-// جدارات أوتو - Popup Script الأصلي العملي
+// جدارات أوتو - Popup Script المُصحح بالكامل
 class JadaratAutoPopup {
     constructor() {
         this.isRunning = false;
@@ -41,6 +41,11 @@ class JadaratAutoPopup {
 
         this.statusIndicator = document.getElementById('statusIndicator');
         this.statusText = document.getElementById('statusText');
+
+        // عناصر الرفض
+        this.exportBtn = document.getElementById('exportBtn');
+        this.clearRejectionBtn = document.getElementById('clearRejectionBtn');
+        this.rejectionInfo = document.getElementById('rejectionInfo');
     }
 
     bindEvents() {
@@ -58,6 +63,15 @@ class JadaratAutoPopup {
 
         this.modeSelect.addEventListener('change', () => this.saveSettings());
         this.soundToggle.addEventListener('change', () => this.saveSettings());
+
+        // أزرار الرفض
+        if (this.exportBtn) {
+            this.exportBtn.addEventListener('click', () => this.exportRejectionData());
+        }
+        
+        if (this.clearRejectionBtn) {
+            this.clearRejectionBtn.addEventListener('click', () => this.clearRejectionData());
+        }
 
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             this.handleMessage(message);
@@ -121,7 +135,8 @@ class JadaratAutoPopup {
                 'delayTime',
                 'mode',
                 'soundEnabled',
-                'stats'
+                'stats',
+                'rejectionData'
             ]);
 
             if (result.delayTime) {
@@ -140,6 +155,16 @@ class JadaratAutoPopup {
             if (result.stats) {
                 this.stats = result.stats;
                 this.updateStats();
+            }
+
+            // تحديث معلومات الرفض
+            if (result.rejectionData && this.rejectionInfo) {
+                const count = result.rejectionData.length;
+                this.rejectionInfo.innerHTML = `
+                    <span class="info-text">
+                        ${count > 0 ? `${count} حالة رفض محفوظة` : 'لا توجد بيانات رفض بعد'}
+                    </span>
+                `;
             }
 
         } catch (error) {
@@ -256,7 +281,6 @@ class JadaratAutoPopup {
     }
 
     handleMessage(message) {
-    handleMessage(message) {
         switch (message.action) {
             case 'UPDATE_PROGRESS':
                 this.setProgress(message.progress, message.text);
@@ -278,6 +302,10 @@ class JadaratAutoPopup {
                 
             case 'AUTOMATION_ERROR':
                 this.onAutomationError(message.error);
+                break;
+
+            case 'SAVE_REJECTION_DATA':
+                this.loadSettings(); // إعادة تحميل لتحديث عدد الرفض
                 break;
         }
     }
@@ -377,6 +405,50 @@ class JadaratAutoPopup {
         this.startBtn.disabled = false;
         this.pauseBtn.disabled = true;
         this.stopBtn.disabled = true;
+    }
+
+    async exportRejectionData() {
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'EXPORT_REJECTION_DATA'
+            });
+
+            if (response && response.exportData && response.exportData.success) {
+                // إنشاء رابط التحميل
+                const link = document.createElement('a');
+                link.href = response.exportData.url;
+                link.download = response.exportData.filename;
+                link.click();
+
+                this.showNotification(`تم تصدير ${response.exportData.count} حالة رفض`);
+            } else {
+                this.showError(response?.exportData?.message || 'فشل في التصدير');
+            }
+        } catch (error) {
+            console.error('Error exporting rejection data:', error);
+            this.showError('خطأ في تصدير البيانات');
+        }
+    }
+
+    async clearRejectionData() {
+        if (confirm('هل أنت متأكد من مسح جميع بيانات الرفض؟')) {
+            try {
+                await chrome.runtime.sendMessage({
+                    action: 'CLEAR_REJECTION_DATA'
+                });
+
+                if (this.rejectionInfo) {
+                    this.rejectionInfo.innerHTML = `
+                        <span class="info-text">لا توجد بيانات رفض بعد</span>
+                    `;
+                }
+
+                this.showNotification('تم مسح بيانات الرفض');
+            } catch (error) {
+                console.error('Error clearing rejection data:', error);
+                this.showError('خطأ في مسح البيانات');
+            }
+        }
     }
 
     showNotification(message) {
