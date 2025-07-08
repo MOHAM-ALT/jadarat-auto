@@ -1,9 +1,11 @@
-// جدارات أوتو - Popup Script المُصحح بالكامل
+// جدارات أوتو - Popup Script المُصحح بالكامل - إصدار محسن
 class JadaratAutoPopup {
     constructor() {
         this.isRunning = false;
         this.isPaused = false;
         this.currentTab = null;
+        this.connectionRetries = 0;
+        this.maxConnectionRetries = 3;
         this.stats = {
             applied: 0,
             skipped: 0,
@@ -73,67 +75,314 @@ class JadaratAutoPopup {
             this.clearRejectionBtn.addEventListener('click', () => this.clearRejectionData());
         }
 
+        // إضافة مستمع الرسائل مع معالجة أفضل للأخطاء
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-            this.handleMessage(message);
+            try {
+                this.handleMessage(message);
+                sendResponse({ received: true });
+            } catch (error) {
+                console.error('Error handling message:', error);
+                sendResponse({ error: error.message });
+            }
         });
     }
 
     async checkConnection() {
         try {
+            console.log('🔍 فحص الاتصال...');
+            
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             this.currentTab = tab;
 
             if (!tab.url || !tab.url.includes('jadarat.sa')) {
                 this.updateStatus('disconnected', 'يرجى الانتقال لموقع جدارات');
                 this.showError('يرجى الانتقال إلى موقع جدارات (jadarat.sa)');
-                this.startBtn.disabled = true;
+                this.disableAllButtons();
                 return;
             }
 
-            try {
-                const response = await chrome.tabs.sendMessage(tab.id, { action: 'PING' });
-                if (response && response.status === 'active') {
-                    this.updateStatus('connected', 'متصل - جاهز');
-                    this.startBtn.disabled = false;
-                } else {
-                    await this.injectContentScript();
-                }
-            } catch (error) {
-                await this.injectContentScript();
-            }
+            console.log('✅ على موقع جدارات، جاري فحص content script...');
+            
+            // محاولة الاتصال مع content script
+            await this.establishConnection();
 
         } catch (error) {
+            console.error('❌ خطأ في فحص الاتصال:', error);
             this.updateStatus('disconnected', 'خطأ في الاتصال');
             this.showError('خطأ في الاتصال مع الصفحة');
+            this.disableAllButtons();
         }
+    }
+
+    async establishConnection() {
+        const maxAttempts = 3;
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+            try {
+                attempts++;
+                console.log(`📡 محاولة الاتصال ${attempts}/${maxAttempts}...`);
+
+                const response = await this.sendMessageSafely(this.currentTab.id, { 
+                    action: 'PING' 
+                }, 5000); // timeout 5 seconds
+
+                if (response && response.status === 'active') {
+                    console.log('✅ الاتصال ناجح! نوع الصفحة:', response.pageType);
+                    this.updateStatus('connected', 'متصل - جاهز');
+                    this.enableButtons();
+                    return;
+                }
+
+                console.log('⚠️ لا يوجد رد، محاولة حقن content script...');
+                await this.injectContentScript();
+
+            } catch (error) {
+                console.error(`❌ فشلت المحاولة ${attempts}:`, error.message);
+                
+                if (attempts < maxAttempts) {
+                    console.log('🔄 انتظار قبل المحاولة التالية...');
+                    await this.delay(2000);
+                } else {
+                    console.error('❌ فشل في جميع محاولات الاتصال');
+                    this.updateStatus('disconnected', 'فشل في الاتصال');
+                    this.showError('فشل في الاتصال مع content script');
+                    this.disableAllButtons();
+                }
+            }
+        }
+    }
+
+    async sendMessageSafely(tabId, message, timeout = 10000) {
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new Error('Message timeout'));
+            }, timeout);
+
+            try {
+                chrome.tabs.sendMessage(tabId, message, (response) => {
+                    clearTimeout(timeoutId);
+                    
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                        return;
+                    }
+                    
+                    resolve(response);
+                });
+            } catch (error) {
+                clearTimeout(timeoutId);
+                reject(error);
+            }
+        });
     }
 
     async injectContentScript() {
         try {
+            console.log('💉 حقن content script...');
+            
             await chrome.scripting.executeScript({
                 target: { tabId: this.currentTab.id },
                 files: ['content.js']
             });
 
-            await this.delay(1000);
+            console.log('✅ تم حقن content script، انتظار التحميل...');
+            await this.delay(3000);
 
-            const response = await chrome.tabs.sendMessage(this.currentTab.id, { action: 'PING' });
+            // فحص الاتصال مرة أخرى
+            const response = await this.sendMessageSafely(this.currentTab.id, { 
+                action: 'PING' 
+            }, 5000);
+
             if (response && response.status === 'active') {
+                console.log('✅ نجح الحقن والاتصال!');
                 this.updateStatus('connected', 'متصل - جاهز');
-                this.startBtn.disabled = false;
+                this.enableButtons();
+            } else {
+                throw new Error('Content script لا يرد بعد الحقن');
             }
 
         } catch (error) {
-            this.updateStatus('disconnected', 'فشل في تحميل المحتوى');
-            this.showError('فشل في تحميل المحتوى');
+            console.error('❌ فشل في حقن content script:', error);
+            throw error;
         }
     }
 
+    enableButtons() {
+        if (this.startBtn) this.startBtn.disabled = false;
+        if (this.restartBtn) this.restartBtn.disabled = false;
+    }
+
+    disableAllButtons() {
+        if (this.startBtn) this.startBtn.disabled = true;
+        if (this.pauseBtn) this.pauseBtn.disabled = true;
+        if (this.stopBtn) this.stopBtn.disabled = true;
+        if (this.resumeBtn) this.resumeBtn.disabled = true;
+        if (this.restartBtn) this.restartBtn.disabled = true;
+    }
+
+    async startAutomation() {
+        try {
+            console.log('🚀 بدء التشغيل...');
+
+            // فحص محسن للصفحات المدعومة
+            const supportedPages = [
+                'ExploreJobs',
+                'JobTab=1', 
+                'JobDetails'
+            ];
+            
+            const isOnSupportedPage = supportedPages.some(page => 
+                this.currentTab.url.includes(page)
+            );
+            
+            if (!isOnSupportedPage) {
+                // محاولة التنقل لصفحة الوظائف
+                const shouldNavigate = confirm('يجب أن تكون على صفحة الوظائف. هل تريد الانتقال إليها؟');
+                if (shouldNavigate) {
+                    await this.navigateToJobsPage();
+                    return;
+                } else {
+                    this.showError('يرجى الانتقال إلى صفحة الوظائف يدوياً');
+                    return;
+                }
+            }
+            
+            // التأكد من الاتصال قبل البدء
+            await this.ensureConnection();
+            
+            this.isRunning = true;
+            this.isPaused = false;
+            
+            this.startBtn.disabled = true;
+            this.pauseBtn.disabled = false;
+            this.stopBtn.disabled = false;
+            
+            this.updateStatus('connected', 'متصل - يعمل');
+            this.setProgress(0, 'بدء التشغيل...');
+
+            const settings = {
+                delayTime: parseInt(this.delayRange.value),
+                mode: this.modeSelect.value,
+                soundEnabled: this.soundToggle.checked
+            };
+
+            console.log('📤 إرسال أمر البدء مع الإعدادات:', settings);
+
+            const response = await this.sendMessageSafely(this.currentTab.id, {
+                action: 'START_AUTOMATION',
+                settings: settings
+            }, 10000);
+
+            if (!response || !response.success) {
+                throw new Error('فشل في بدء التشغيل من content script');
+            }
+
+            console.log('✅ تم بدء التشغيل بنجاح');
+
+        } catch (error) {
+            console.error('❌ خطأ في بدء التشغيل:', error);
+            this.showError(`فشل في بدء التشغيل: ${error.message}`);
+            this.stopAutomation();
+        }
+    }
+
+    async ensureConnection() {
+        try {
+            const response = await this.sendMessageSafely(this.currentTab.id, { 
+                action: 'PING' 
+            }, 3000);
+            
+            if (!response || response.status !== 'active') {
+                console.log('🔄 إعادة تأسيس الاتصال...');
+                await this.establishConnection();
+            }
+        } catch (error) {
+            console.log('🔄 إعادة تأسيس الاتصال بسبب خطأ...');
+            await this.establishConnection();
+        }
+    }
+
+    async navigateToJobsPage() {
+        try {
+            const jobsUrl = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
+            await chrome.tabs.update(this.currentTab.id, { url: jobsUrl });
+            
+            // انتظار التحميل
+            await this.delay(5000);
+            
+            // إعادة فحص الاتصال
+            await this.checkConnection();
+            
+        } catch (error) {
+            console.error('❌ فشل في التنقل:', error);
+            this.showError('فشل في التنقل لصفحة الوظائف');
+        }
+    }
+
+    async pauseAutomation() {
+        console.log('⏸️ إيقاف مؤقت...');
+        this.isPaused = true;
+        
+        this.pauseBtn.disabled = true;
+        this.startBtn.disabled = false;
+        
+        this.updateStatus('connected', 'متصل - متوقف مؤقتاً');
+        
+        try {
+            await this.sendMessageSafely(this.currentTab.id, { 
+                action: 'PAUSE_AUTOMATION' 
+            }, 3000);
+        } catch (error) {
+            console.error('Error sending pause message:', error);
+        }
+    }
+
+    async stopAutomation() {
+        console.log('⏹️ إيقاف نهائي...');
+        this.isRunning = false;
+        this.isPaused = false;
+        
+        this.startBtn.disabled = false;
+        this.pauseBtn.disabled = true;
+        this.stopBtn.disabled = true;
+        
+        this.updateStatus('connected', 'متصل - جاهز');
+        this.setProgress(0, 'تم الإيقاف');
+        this.currentJob.innerHTML = '<span class="job-status">تم الإيقاف</span>';
+
+        try {
+            await this.sendMessageSafely(this.currentTab.id, { 
+                action: 'STOP_AUTOMATION' 
+            }, 3000);
+        } catch (error) {
+            console.error('Error sending stop message:', error);
+        }
+    }
+
+    async resumeAutomation() {
+        await this.startAutomation();
+    }
+
+    async restartAutomation() {
+        console.log('🔄 إعادة البدء...');
+        this.stats = { applied: 0, skipped: 0, rejected: 0, total: 0 };
+        this.updateStats();
+        await this.saveSettings();
+        
+        if (this.isRunning) {
+            await this.stopAutomation();
+            await this.delay(1000);
+        }
+        await this.startAutomation();
+    }
+
+    // باقي الدوال تبقى كما هي...
     async loadSettings() {
         try {
             const result = await chrome.storage.local.get([
                 'delayTime',
-                'mode',
+                'mode', 
                 'soundEnabled',
                 'stats',
                 'rejectionData'
@@ -157,7 +406,6 @@ class JadaratAutoPopup {
                 this.updateStats();
             }
 
-            // تحديث معلومات الرفض
             if (result.rejectionData && this.rejectionInfo) {
                 const count = result.rejectionData.length;
                 this.rejectionInfo.innerHTML = `
@@ -187,114 +435,9 @@ class JadaratAutoPopup {
         }
     }
 
-    async startAutomation() {
-        try {
-            if (!this.currentTab || !this.currentTab.url.includes('jadarat.sa')) {
-                this.showError('يرجى التأكد من أنك على موقع جدارات الصحيح');
-                return;
-            }
-
-            if (!this.currentTab.url.includes('ExploreJobs') && !this.currentTab.url.includes('JobTab=1')) {
-                this.showError('يرجى الانتقال إلى صفحة البحث عن الوظائف');
-                return;
-            }
-
-            // فحص محسن للصفحات المدعومة
-            const supportedPages = [
-                'ExploreJobs',
-                'JobTab=1', 
-                'JobDetails'  // إضافة دعم صفحة التفاصيل
-            ];
-            
-            const isOnSupportedPage = supportedPages.some(page => this.currentTab.url.includes(page));
-            
-            if (!isOnSupportedPage) {
-                this.showError('يرجى الانتقال إلى صفحة الوظائف (قائمة أو تفاصيل)');
-                return;
-            }
-            
-            this.isRunning = true;
-            this.isPaused = false;
-            
-            this.startBtn.disabled = true;
-            this.pauseBtn.disabled = false;
-            this.stopBtn.disabled = false;
-            
-            this.updateStatus('connected', 'متصل - يعمل');
-            this.setProgress(0, 'بدء التشغيل...');
-
-            const settings = {
-                delayTime: parseInt(this.delayRange.value),
-                mode: this.modeSelect.value,
-                soundEnabled: this.soundToggle.checked
-            };
-
-            const response = await chrome.tabs.sendMessage(this.currentTab.id, {
-                action: 'START_AUTOMATION',
-                settings: settings
-            });
-
-            if (!response || !response.success) {
-                throw new Error('Failed to start automation');
-            }
-
-        } catch (error) {
-            this.showError('فشل في بدء التشغيل');
-            this.stopAutomation();
-        }
-    }
-
-    async pauseAutomation() {
-        this.isPaused = true;
-        
-        this.pauseBtn.disabled = true;
-        this.startBtn.disabled = false;
-        
-        this.updateStatus('connected', 'متصل - متوقف مؤقتاً');
-        
-        try {
-            await chrome.tabs.sendMessage(this.currentTab.id, { action: 'PAUSE_AUTOMATION' });
-        } catch (error) {
-            console.error('Error sending pause message:', error);
-        }
-    }
-
-    async stopAutomation() {
-        this.isRunning = false;
-        this.isPaused = false;
-        
-        this.startBtn.disabled = false;
-        this.pauseBtn.disabled = true;
-        this.stopBtn.disabled = true;
-        
-        this.updateStatus('connected', 'متصل - جاهز');
-        this.setProgress(0, 'تم الإيقاف');
-        this.currentJob.innerHTML = '<span class="job-status">تم الإيقاف</span>';
-
-        try {
-            await chrome.tabs.sendMessage(this.currentTab.id, { action: 'STOP_AUTOMATION' });
-        } catch (error) {
-            console.error('Error sending stop message:', error);
-        }
-    }
-
-    async resumeAutomation() {
-        await this.startAutomation();
-    }
-
-    async restartAutomation() {
-        this.stats = { applied: 0, skipped: 0, rejected: 0, total: 0 };
-        this.updateStats();
-        await this.saveSettings();
-        
-        if (this.isRunning) {
-            await this.stopAutomation();
-            await this.delay(1000);
-            await this.startAutomation();
-        }
-    }
-
     handleMessage(message) {
+        console.log('📨 استلام رسالة من content script:', message.action);
+        
         switch (message.action) {
             case 'UPDATE_PROGRESS':
                 this.setProgress(message.progress, message.text);
@@ -319,7 +462,7 @@ class JadaratAutoPopup {
                 break;
 
             case 'SAVE_REJECTION_DATA':
-                this.loadSettings(); // إعادة تحميل لتحديث عدد الرفض
+                this.loadSettings();
                 break;
         }
     }
@@ -413,6 +556,7 @@ class JadaratAutoPopup {
     }
 
     onAutomationError(error) {
+        this.isRunning = false;
         this.updateStatus('connected', 'خطأ');
         this.currentJob.innerHTML = `<span class="job-status" style="color: #ff4545">خطأ: ${error}</span>`;
         
@@ -428,7 +572,6 @@ class JadaratAutoPopup {
             });
 
             if (response && response.exportData && response.exportData.success) {
-                // إنشاء رابط التحميل
                 const link = document.createElement('a');
                 link.href = response.exportData.url;
                 link.download = response.exportData.filename;
@@ -466,6 +609,7 @@ class JadaratAutoPopup {
     }
 
     showNotification(message) {
+        console.log('📢', message);
         if (this.soundToggle && this.soundToggle.checked) {
             try {
                 chrome.notifications.create({
@@ -481,6 +625,7 @@ class JadaratAutoPopup {
     }
 
     showError(message) {
+        console.error('❌', message);
         if (this.currentJob) {
             this.currentJob.innerHTML = `<span class="job-status" style="color: #ff4545">${message}</span>`;
         }
@@ -494,6 +639,7 @@ class JadaratAutoPopup {
 // Initialize the popup when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     try {
+        console.log('🎯 تهيئة popup...');
         new JadaratAutoPopup();
     } catch (error) {
         console.error('Error initializing popup:', error);
