@@ -1362,37 +1362,43 @@ findSubmitButton() {
             return null;
         }
 
-// احذف جميع النسخ المكررة واترك هذه النسخة المحسنة فقط
         async handleConfirmationDialog() {
             console.log('🔍 البحث المحسن عن نافذة التأكيد');
             
-            for (let attempt = 0; attempt < 8; attempt++) {
+            let attempts = 0;
+            const maxAttempts = 5;
+            
+            while (attempts < maxAttempts) {
                 const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"], .popup');
                 
                 for (const dialog of dialogs) {
-                    if (!this.isElementVisible(dialog)) continue;
-                    
-                    const text = dialog.textContent;
-                    console.log(`💬 فحص نافذة: ${text.substring(0, 100)}...`);
-                    
-                    if (text.includes('هل أنت متأكد') || text.includes('تأكيد') || text.includes('متأكد من التقديم')) {
-                        console.log('✅ تم العثور على نافذة التأكيد');
+                    if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
+                        const text = dialog.textContent;
                         
-                        const buttons = dialog.querySelectorAll('button, a, input[type="button"]');
-                        for (const btn of buttons) {
-                            const btnText = (btn.textContent || btn.value || '').trim();
-                            if (btnText === 'تقديم' || btnText === 'تأكيد' || btnText === 'موافق') {
-                                console.log('✅ النقر على زر التأكيد:', btnText);
-                                await this.clickElementImproved(btn);
-                                await this.wait(2000);
-                                return true;
+                        console.log('💬 نافذة منبثقة موجودة:', text.substring(0, 100));
+                        
+                        if (text.includes('هل أنت متأكد') || text.includes('تأكيد') || text.includes('متأكد من التقديم')) {
+                            console.log('✅ تم العثور على نافذة التأكيد');
+                            
+                            const buttons = dialog.querySelectorAll('button, a, input[type="button"]');
+                            for (const btn of buttons) {
+                                const btnText = (btn.textContent || btn.value || '').trim();
+                                console.log('🔍 زر في النافذة:', btnText);
+                                
+                                if (btnText === 'تقديم' || btnText === 'تأكيد' || btnText === 'موافق') {
+                                    console.log('✅ النقر على زر التأكيد:', btnText);
+                                    await this.clickElementImproved(btn);
+                                    await this.wait(2000);
+                                    return true;
+                                }
                             }
                         }
                     }
                 }
                 
-                if (attempt < 7) {
-                    console.log(`⏳ محاولة ${attempt + 1}/8 للعثور على نافذة التأكيد...`);
+                attempts++;
+                if (attempts < maxAttempts) {
+                    console.log(`⏳ محاولة ${attempts}/${maxAttempts} للعثور على نافذة التأكيد...`);
                     await this.wait(2000);
                 }
             }
@@ -1463,6 +1469,31 @@ findSubmitButton() {
         }
 
 
+    async handleConfirmationDialog() {
+        console.log('🔍 البحث عن نافذة التأكيد');
+        
+        const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
+        
+        for (const dialog of dialogs) {
+            if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
+                const text = dialog.textContent;
+                
+                if (text.includes('هل أنت متأكد من التقديم')) {
+                    console.log('✅ تم العثور على نافذة التأكيد');
+                    
+                    const buttons = dialog.querySelectorAll('button');
+                    for (const btn of buttons) {
+                        if (btn.textContent.trim() === 'تقديم') {
+                            console.log('✅ النقر على زر التأكيد');
+                            await this.clickElementImproved(btn);
+                            await this.wait(3000);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     async handleResultDialog() {
         console.log('🔍 البحث عن نافذة النتيجة');
@@ -1727,32 +1758,6 @@ findSubmitButton() {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    async retryOperation(operation, maxRetries = 3, delay = 2000) {
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                console.log(`🔄 محاولة ${attempt}/${maxRetries}...`);
-                const result = await operation();
-                if (result) {
-                    console.log('✅ نجحت العملية');
-                    return result;
-                }
-            } catch (error) {
-                console.error(`❌ فشلت المحاولة ${attempt}:`, error.message);
-                if (attempt === maxRetries) {
-                    throw error;
-                }
-            }
-            
-            if (attempt < maxRetries) {
-                console.log(`⏳ انتظار ${delay}ms قبل المحاولة التالية...`);
-                await this.wait(delay);
-            }
-        }
-        
-        return null;
-    }
-
-    
     getRandomDelay() {
         const base = this.settings.delayTime * 1000;
         const variation = base * 0.3;
