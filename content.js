@@ -77,10 +77,8 @@ if (window.jadaratAutoContentLoaded) {
             const hasJobDetailsBlock = pageHTML.includes('Job.PostDetailsBlock') || 
                                       pageHTML.includes('data-block="Job.PostDetailsBlock"');
             
-            // فحص وجود زر التقديم (مؤشر قوي على صفحة التفاصيل)
-            const submitButtonExists = document.querySelector('button:contains("تقديم")') || 
-                                      document.querySelector('[data-button*="تقديم"]') ||
-                                      pageHTML.includes('btn btn-primary') && pageHTML.includes('تقديم');
+            // فحص وجود زر التقديم (بدون :contains)
+            const submitButtonExists = this.hasSubmitButton();
             
             // فحص وجود عناصر تفاصيل الوظيفة المميزة
             const hasJobTitleElement = document.querySelector('span.heading5') !== null;
@@ -136,6 +134,18 @@ if (window.jadaratAutoContentLoaded) {
             }
         }
 
+        // دالة مساعدة للبحث عن زر التقديم (بدون :contains)
+        hasSubmitButton() {
+            const allButtons = document.querySelectorAll('button');
+            for (const button of allButtons) {
+                const text = button.textContent.trim();
+                if (text === 'تقديم' && button.offsetWidth > 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         analyzeJobDetailsPage() {
             // تحليل صفحة تفاصيل الوظيفة
             const jobTitle = this.extractCurrentJobTitle();
@@ -187,15 +197,6 @@ if (window.jadaratAutoContentLoaded) {
                     if (title.length > 5 && !/^\d+$/.test(title)) {
                         return title;
                     }
-                }
-            }
-            
-            // البحث في عنصر مسمى الوظيفة وفقا للعقد
-            const jobNameElement = document.querySelector('span:contains("مسمى الوظيفة وفقا للعقد")');
-            if (jobNameElement) {
-                const nextSpan = jobNameElement.parentElement.nextElementSibling?.querySelector('span');
-                if (nextSpan && nextSpan.textContent.trim()) {
-                    return nextSpan.textContent.trim();
                 }
             }
             
@@ -369,7 +370,7 @@ if (window.jadaratAutoContentLoaded) {
                     
                 default:
                     this.sendMessage('AUTOMATION_ERROR', { 
-                        error: 'يرجى الانتقال إلى موقع جدارات أولاً' 
+                        error: 'يرجى الانتقال إلى صفحة قائمة الوظائف أولاً' 
                     });
                     this.showIndicator('❌ صفحة غير مدعومة', '#ff4545', 5000);
             }
@@ -852,7 +853,6 @@ if (window.jadaratAutoContentLoaded) {
             await this.wait(2000);
             
             const pageText = document.body.textContent || '';
-            const pageHTML = document.body.innerHTML || '';
             
             // مؤشرات التقديم المسبق المحدثة
             const appliedIndicators = [
@@ -955,33 +955,6 @@ if (window.jadaratAutoContentLoaded) {
         findSubmitButton() {
             console.log('🔍 البحث عن زر التقديم');
             
-            // محددات محدثة حسب البنية الفعلية
-            const submitSelectors = [
-                'button[data-button*="تقديم"]',                    // المحدد المباشر
-                'button.btn.btn-primary:contains("تقديم")',        // الفئة الفعلية
-                'button:contains("تقديم")',                       // عام
-                'input[type="submit"][value*="تقديم"]',            // إدخال submit
-                '[data-button]:contains("تقديم")',                // محدد البيانات
-                'a[href*="apply"]:contains("تقديم")',             // رابط تقديم
-                '.btn-primary:contains("تقديم")'                  // فئة أساسية
-            ];
-            
-            // البحث باستخدام المحددات المحدثة
-            for (const selector of submitSelectors) {
-                const elements = document.querySelectorAll(selector.replace(':contains("تقديم")', ''));
-                
-                for (const element of elements) {
-                    const text = (element.textContent || element.value || '').trim();
-                    const isVisible = element.offsetWidth > 0 && element.offsetHeight > 0;
-                    const isEnabled = !element.disabled && !element.classList.contains('disabled');
-                    
-                    if (text === 'تقديم' && isVisible && isEnabled) {
-                        console.log('✅ تم العثور على زر التقديم:', element);
-                        return element;
-                    }
-                }
-            }
-            
             // البحث الشامل كبديل
             const allButtons = document.querySelectorAll('button, input[type="submit"], a');
             
@@ -991,7 +964,7 @@ if (window.jadaratAutoContentLoaded) {
                 const isEnabled = !button.disabled && !button.classList.contains('disabled');
                 
                 if (text === 'تقديم' && isVisible && isEnabled) {
-                    console.log('✅ تم العثور على زر التقديم (البحث الشامل):', button);
+                    console.log('✅ تم العثور على زر التقديم:', button);
                     return button;
                 }
             }
@@ -1022,15 +995,14 @@ if (window.jadaratAutoContentLoaded) {
                     if (text.includes('هل أنت متأكد من التقديم')) {
                         console.log('✅ تم العثور على نافذة التأكيد');
                         
-                        const confirmButton = Array.from(dialog.querySelectorAll('button')).find(btn => {
-                            return btn.textContent.trim() === 'تقديم';
-                        });
-                        
-                        if (confirmButton) {
-                            console.log('✅ النقر على زر التأكيد');
-                            await this.clickElementImproved(confirmButton);
-                            await this.wait(3000);
-                            return;
+                        const buttons = dialog.querySelectorAll('button');
+                        for (const btn of buttons) {
+                            if (btn.textContent.trim() === 'تقديم') {
+                                console.log('✅ النقر على زر التأكيد');
+                                await this.clickElementImproved(btn);
+                                await this.wait(3000);
+                                return;
+                            }
                         }
                     }
                 }
@@ -1322,9 +1294,9 @@ if (window.jadaratAutoContentLoaded) {
                     const currentPageContent = document.body.innerHTML.length;
                     const contentChanged = Math.abs(currentPageContent - lastPageContent) > 1000;
                     const pageLoaded = document.readyState === 'complete';
-                    const hasJobDetails = document.body.textContent.includes('وصف الوظيفة') || 
+                    const hasJobDetails = document.body.textContent.includes('الوصف الوظيفي') || 
                                         document.body.textContent.includes('نوع العمل') ||
-                                        document.body.textContent.includes('المؤهل العلمي');
+                                        document.body.textContent.includes('المؤهلات');
                     
                     console.log(`⏳ محاولة ${attempts}/${maxAttempts} - URL: ${urlChanged}, محتوى: ${contentChanged}, تفاصيل: ${hasJobDetails}`);
                     
