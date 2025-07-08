@@ -1,11 +1,9 @@
-// جدارات أوتو - Popup Script المُصحح بالكامل - إصدار محسن
+// جدارات أوتو - Popup Script المُصحح نهائياً - حل مشاكل الاتصال
 class JadaratAutoPopup {
     constructor() {
         this.isRunning = false;
         this.isPaused = false;
         this.currentTab = null;
-        this.connectionRetries = 0;
-        this.maxConnectionRetries = 3;
         this.stats = {
             applied: 0,
             skipped: 0,
@@ -44,7 +42,6 @@ class JadaratAutoPopup {
         this.statusIndicator = document.getElementById('statusIndicator');
         this.statusText = document.getElementById('statusText');
 
-        // عناصر الرفض
         this.exportBtn = document.getElementById('exportBtn');
         this.clearRejectionBtn = document.getElementById('clearRejectionBtn');
         this.rejectionInfo = document.getElementById('rejectionInfo');
@@ -66,7 +63,6 @@ class JadaratAutoPopup {
         this.modeSelect.addEventListener('change', () => this.saveSettings());
         this.soundToggle.addEventListener('change', () => this.saveSettings());
 
-        // أزرار الرفض
         if (this.exportBtn) {
             this.exportBtn.addEventListener('click', () => this.exportRejectionData());
         }
@@ -75,15 +71,11 @@ class JadaratAutoPopup {
             this.clearRejectionBtn.addEventListener('click', () => this.clearRejectionData());
         }
 
-        // إضافة مستمع الرسائل مع معالجة أفضل للأخطاء
+        // مستمع الرسائل المحسن
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-            try {
-                this.handleMessage(message);
-                sendResponse({ received: true });
-            } catch (error) {
-                console.error('Error handling message:', error);
-                sendResponse({ error: error.message });
-            }
+            this.handleMessage(message);
+            // لا نستخدم sendResponse هنا لتجنب مشاكل القناة
+            return false; // إنهاء القناة فوراً
         });
     }
 
@@ -102,8 +94,6 @@ class JadaratAutoPopup {
             }
 
             console.log('✅ على موقع جدارات، جاري فحص content script...');
-            
-            // محاولة الاتصال مع content script
             await this.establishConnection();
 
         } catch (error) {
@@ -123,9 +113,7 @@ class JadaratAutoPopup {
                 attempts++;
                 console.log(`📡 محاولة الاتصال ${attempts}/${maxAttempts}...`);
 
-                const response = await this.sendMessageSafely(this.currentTab.id, { 
-                    action: 'PING' 
-                }, 5000); // timeout 5 seconds
+                const response = await this.sendMessageWithPromise({ action: 'PING' });
 
                 if (response && response.status === 'active') {
                     console.log('✅ الاتصال ناجح! نوع الصفحة:', response.pageType);
@@ -153,15 +141,16 @@ class JadaratAutoPopup {
         }
     }
 
-    async sendMessageSafely(tabId, message, timeout = 10000) {
+    // دالة محسنة لإرسال الرسائل مع Promise
+    async sendMessageWithPromise(message, timeoutMs = 8000) {
         return new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
+            const timeout = setTimeout(() => {
                 reject(new Error('Message timeout'));
-            }, timeout);
+            }, timeoutMs);
 
             try {
-                chrome.tabs.sendMessage(tabId, message, (response) => {
-                    clearTimeout(timeoutId);
+                chrome.tabs.sendMessage(this.currentTab.id, message, (response) => {
+                    clearTimeout(timeout);
                     
                     if (chrome.runtime.lastError) {
                         reject(new Error(chrome.runtime.lastError.message));
@@ -171,10 +160,23 @@ class JadaratAutoPopup {
                     resolve(response);
                 });
             } catch (error) {
-                clearTimeout(timeoutId);
+                clearTimeout(timeout);
                 reject(error);
             }
         });
+    }
+
+    // دالة لإرسال رسائل بدون انتظار رد (للأوامر)
+    sendMessageFireAndForget(message) {
+        try {
+            chrome.tabs.sendMessage(this.currentTab.id, message, () => {
+                if (chrome.runtime.lastError) {
+                    console.log('رسالة مرسلة بدون رد:', chrome.runtime.lastError.message);
+                }
+            });
+        } catch (error) {
+            console.error('خطأ في إرسال الرسالة:', error);
+        }
     }
 
     async injectContentScript() {
@@ -189,10 +191,7 @@ class JadaratAutoPopup {
             console.log('✅ تم حقن content script، انتظار التحميل...');
             await this.delay(3000);
 
-            // فحص الاتصال مرة أخرى
-            const response = await this.sendMessageSafely(this.currentTab.id, { 
-                action: 'PING' 
-            }, 5000);
+            const response = await this.sendMessageWithPromise({ action: 'PING' });
 
             if (response && response.status === 'active') {
                 console.log('✅ نجح الحقن والاتصال!');
@@ -225,29 +224,6 @@ class JadaratAutoPopup {
         try {
             console.log('🚀 بدء التشغيل...');
 
-            // فحص محسن للصفحات المدعومة
-            const supportedPages = [
-                'ExploreJobs',
-                'JobTab=1', 
-                'JobDetails'
-            ];
-            
-            const isOnSupportedPage = supportedPages.some(page => 
-                this.currentTab.url.includes(page)
-            );
-            
-            if (!isOnSupportedPage) {
-                // محاولة التنقل لصفحة الوظائف
-                const shouldNavigate = confirm('يجب أن تكون على صفحة الوظائف. هل تريد الانتقال إليها؟');
-                if (shouldNavigate) {
-                    await this.navigateToJobsPage();
-                    return;
-                } else {
-                    this.showError('يرجى الانتقال إلى صفحة الوظائف يدوياً');
-                    return;
-                }
-            }
-            
             // التأكد من الاتصال قبل البدء
             await this.ensureConnection();
             
@@ -269,16 +245,13 @@ class JadaratAutoPopup {
 
             console.log('📤 إرسال أمر البدء مع الإعدادات:', settings);
 
-            const response = await this.sendMessageSafely(this.currentTab.id, {
+            // استخدم رسالة بدون انتظار رد لتجنب timeout
+            this.sendMessageFireAndForget({
                 action: 'START_AUTOMATION',
                 settings: settings
-            }, 10000);
+            });
 
-            if (!response || !response.success) {
-                throw new Error('فشل في بدء التشغيل من content script');
-            }
-
-            console.log('✅ تم بدء التشغيل بنجاح');
+            console.log('✅ تم إرسال أمر البدء بنجاح');
 
         } catch (error) {
             console.error('❌ خطأ في بدء التشغيل:', error);
@@ -289,9 +262,7 @@ class JadaratAutoPopup {
 
     async ensureConnection() {
         try {
-            const response = await this.sendMessageSafely(this.currentTab.id, { 
-                action: 'PING' 
-            }, 3000);
+            const response = await this.sendMessageWithPromise({ action: 'PING' }, 3000);
             
             if (!response || response.status !== 'active') {
                 console.log('🔄 إعادة تأسيس الاتصال...');
@@ -300,23 +271,6 @@ class JadaratAutoPopup {
         } catch (error) {
             console.log('🔄 إعادة تأسيس الاتصال بسبب خطأ...');
             await this.establishConnection();
-        }
-    }
-
-    async navigateToJobsPage() {
-        try {
-            const jobsUrl = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
-            await chrome.tabs.update(this.currentTab.id, { url: jobsUrl });
-            
-            // انتظار التحميل
-            await this.delay(5000);
-            
-            // إعادة فحص الاتصال
-            await this.checkConnection();
-            
-        } catch (error) {
-            console.error('❌ فشل في التنقل:', error);
-            this.showError('فشل في التنقل لصفحة الوظائف');
         }
     }
 
@@ -329,13 +283,7 @@ class JadaratAutoPopup {
         
         this.updateStatus('connected', 'متصل - متوقف مؤقتاً');
         
-        try {
-            await this.sendMessageSafely(this.currentTab.id, { 
-                action: 'PAUSE_AUTOMATION' 
-            }, 3000);
-        } catch (error) {
-            console.error('Error sending pause message:', error);
-        }
+        this.sendMessageFireAndForget({ action: 'PAUSE_AUTOMATION' });
     }
 
     async stopAutomation() {
@@ -351,13 +299,7 @@ class JadaratAutoPopup {
         this.setProgress(0, 'تم الإيقاف');
         this.currentJob.innerHTML = '<span class="job-status">تم الإيقاف</span>';
 
-        try {
-            await this.sendMessageSafely(this.currentTab.id, { 
-                action: 'STOP_AUTOMATION' 
-            }, 3000);
-        } catch (error) {
-            console.error('Error sending stop message:', error);
-        }
+        this.sendMessageFireAndForget({ action: 'STOP_AUTOMATION' });
     }
 
     async resumeAutomation() {
@@ -377,7 +319,6 @@ class JadaratAutoPopup {
         await this.startAutomation();
     }
 
-    // باقي الدوال تبقى كما هي...
     async loadSettings() {
         try {
             const result = await chrome.storage.local.get([
@@ -438,32 +379,36 @@ class JadaratAutoPopup {
     handleMessage(message) {
         console.log('📨 استلام رسالة من content script:', message.action);
         
-        switch (message.action) {
-            case 'UPDATE_PROGRESS':
-                this.setProgress(message.progress, message.text);
-                break;
-                
-            case 'UPDATE_CURRENT_JOB':
-                this.updateCurrentJob(message.jobTitle, message.status, message.reason);
-                break;
-                
-            case 'UPDATE_STATS':
-                this.stats = message.stats;
-                this.updateStats();
-                this.saveSettings();
-                break;
-                
-            case 'AUTOMATION_COMPLETED':
-                this.onAutomationCompleted();
-                break;
-                
-            case 'AUTOMATION_ERROR':
-                this.onAutomationError(message.error);
-                break;
+        try {
+            switch (message.action) {
+                case 'UPDATE_PROGRESS':
+                    this.setProgress(message.progress, message.text);
+                    break;
+                    
+                case 'UPDATE_CURRENT_JOB':
+                    this.updateCurrentJob(message.jobTitle, message.status, message.reason);
+                    break;
+                    
+                case 'UPDATE_STATS':
+                    this.stats = message.stats;
+                    this.updateStats();
+                    this.saveSettings();
+                    break;
+                    
+                case 'AUTOMATION_COMPLETED':
+                    this.onAutomationCompleted();
+                    break;
+                    
+                case 'AUTOMATION_ERROR':
+                    this.onAutomationError(message.error);
+                    break;
 
-            case 'SAVE_REJECTION_DATA':
-                this.loadSettings();
-                break;
+                case 'SAVE_REJECTION_DATA':
+                    this.loadSettings();
+                    break;
+            }
+        } catch (error) {
+            console.error('خطأ في معالجة الرسالة:', error);
         }
     }
 

@@ -580,45 +580,60 @@ if (window.jadaratAutoContentLoaded) {
             }
         }
 
-        async handleMessage(message, sendResponse) {
-            console.log('📨 استلام رسالة:', message.action);
-            
-            try {
-                switch (message.action) {
-                    case 'PING':
-                        sendResponse({ 
-                            status: 'active', 
-                            pageType: this.pageType,
-                            url: window.location.href,
-                            timestamp: Date.now()
-                        });
-                        break;
-                        
-                    case 'START_AUTOMATION':
+        // إصلاح دالة handleMessage في content.js
+async handleMessage(message, sendResponse) {
+    console.log('📨 استلام رسالة:', message.action);
+    
+    try {
+        switch (message.action) {
+            case 'PING':
+                // رد فوري للـ ping
+                const pingResponse = { 
+                    status: 'active', 
+                    pageType: this.pageType,
+                    url: window.location.href,
+                    timestamp: Date.now()
+                };
+                sendResponse(pingResponse);
+                break;
+                
+            case 'START_AUTOMATION':
+                // للأوامر الطويلة، أرسل رد فوري ثم نفذ العملية
+                sendResponse({ success: true, message: 'بدء الأتمتة...' });
+                
+                // تنفيذ العملية بشكل منفصل
+                setTimeout(async () => {
+                    try {
                         this.settings = message.settings || this.settings;
                         console.log('🚀 بدء الأتمتة مع الإعدادات:', this.settings);
                         await this.startSmartAutomation();
-                        sendResponse({ success: true });
-                        break;
-                        
-                    case 'PAUSE_AUTOMATION':
-                        this.pauseAutomation();
-                        sendResponse({ success: true });
-                        break;
-                        
-                    case 'STOP_AUTOMATION':
-                        this.stopAutomation();
-                        sendResponse({ success: true });
-                        break;
-                        
-                    default:
-                        sendResponse({ success: false, error: 'Unknown action' });
-                }
-            } catch (error) {
-                console.error('❌ خطأ في معالجة الرسالة:', error);
-                sendResponse({ success: false, error: error.message });
-            }
+                    } catch (error) {
+                        console.error('❌ خطأ في بدء الأتمتة:', error);
+                        this.sendMessage('AUTOMATION_ERROR', { error: error.message });
+                    }
+                }, 100);
+                break;
+                
+            case 'PAUSE_AUTOMATION':
+                sendResponse({ success: true });
+                this.pauseAutomation();
+                break;
+                
+            case 'STOP_AUTOMATION':
+                sendResponse({ success: true });
+                this.stopAutomation();
+                break;
+                
+            default:
+                sendResponse({ success: false, error: 'Unknown action' });
         }
+    } catch (error) {
+        console.error('❌ خطأ في معالجة الرسالة:', error);
+        sendResponse({ success: false, error: error.message });
+    }
+    
+    // لا نعيد true هنا لتجنب إبقاء القناة مفتوحة
+}
 
         pauseAutomation() {
             console.log('⏸️ إيقاف مؤقت');
