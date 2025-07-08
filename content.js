@@ -277,7 +277,7 @@ checkPageType() {
             console.log('⚠️ انتهت محاولات انتظار التحميل');
             return false;
         }
-        
+
         // دالة مساعدة للبحث عن زر التقديم (بدون :contains)
         hasSubmitButton() {
             const allButtons = document.querySelectorAll('button');
@@ -520,36 +520,221 @@ checkPageType() {
             }
         }
 
-        async startFromJobDetails() {
-            console.log('📄 البدء من صفحة تفاصيل الوظيفة');
+        async applyForJob() {
+            console.log('📝 بدء عملية التقديم المحسنة');
             
-            const jobTitle = this.resumeData?.jobTitle || 'الوظيفة الحالية';
-            
-            this.showIndicator(`🔍 تم اكتشافك في: ${jobTitle}`, '#ffc107');
-            
-            this.sendMessage('UPDATE_PROGRESS', { 
-                progress: 0, 
-                text: `معالجة الوظيفة الحالية: ${jobTitle}` 
-            });
+            try {
+                // انتظار قصير للتأكد من تحميل الصفحة
+                await this.wait(2000);
+                
+                // البحث عن زر التقديم
+                const submitButton = this.findSubmitButton();
+                
+                if (!submitButton) {
+                    console.log('❌ لم يتم العثور على زر التقديم');
+                    return { success: false, reason: 'لم يتم العثور على زر التقديم' };
+                }
 
-            // معالجة الوظيفة الحالية
-            const result = await this.processCurrentJob();
-            
-            if (result.completed) {
-                this.showIndicator('⚡ سأعود للقائمة وأكمل باقي الوظائف', '#00ff88', 3000);
+                console.log('✅ تم العثور على زر التقديم:', submitButton);
+                console.log('👆 النقر على زر التقديم...');
                 
-                // العودة لقائمة الوظائف
-                await this.goBackToJobList();
+                // النقر على زر التقديم
+                await this.clickElementImproved(submitButton);
                 
-                // المتابعة من قائمة الوظائف
-                await this.startFromJobList();
-            } else {
-                this.sendMessage('AUTOMATION_ERROR', { 
-                    error: 'فشل في معالجة الوظيفة الحالية' 
-                });
+                // انتظار نافذة التأكيد
+                console.log('⏳ انتظار نافذة التأكيد...');
+                await this.wait(3000);
+                
+                // معالجة نافذة التأكيد
+                const confirmResult = await this.handleConfirmationDialog();
+                if (!confirmResult) {
+                    console.log('⚠️ لم يتم العثور على نافذة التأكيد، ربما تم التقديم مباشرة');
+                } else {
+                    console.log('✅ تم التعامل مع نافذة التأكيد');
+                }
+                
+                // انتظار نافذة النتيجة
+                console.log('⏳ انتظار نافذة النتيجة...');
+                await this.wait(4000);
+                
+                const result = await this.handleResultDialog();
+                
+                console.log('📊 نتيجة التقديم:', result);
+                return result;
+
+            } catch (error) {
+                console.error('❌ خطأ في التقديم:', error);
+                return { success: false, reason: error.message };
             }
         }
 
+        findSubmitButton() {
+            console.log('🔍 البحث المحسن عن زر التقديم');
+            
+            // محددات متعددة للبحث
+            const selectors = [
+                'button.btn.btn-primary:contains("تقديم")',
+                'button[data-button]:contains("تقديم")',
+                'button.btn:contains("تقديم")',
+                'input[type="submit"][value="تقديم"]',
+                'a.btn:contains("تقديم")'
+            ];
+            
+            // جرب المحددات المباشرة أولاً
+            for (const selector of selectors) {
+                try {
+                    const elements = document.querySelectorAll(selector.split(':contains')[0]);
+                    for (const element of elements) {
+                        if (element.textContent.trim() === 'تقديم' && 
+                            element.offsetWidth > 0 && 
+                            element.offsetHeight > 0 &&
+                            !element.disabled) {
+                            console.log('✅ عثر على زر التقديم باستخدام:', selector);
+                            return element;
+                        }
+                    }
+                } catch (e) {
+                    // ignore selector errors
+                }
+            }
+            
+            // البحث الشامل في جميع الأزرار
+            console.log('🔍 البحث الشامل في جميع الأزرار...');
+            const allButtons = document.querySelectorAll('button, input[type="submit"], input[type="button"], a');
+            
+            for (const button of allButtons) {
+                const text = (button.textContent || button.value || '').trim();
+                const isVisible = button.offsetWidth > 0 && button.offsetHeight > 0;
+                const isEnabled = !button.disabled && !button.classList.contains('disabled');
+                
+                if (text === 'تقديم' && isVisible && isEnabled) {
+                    console.log('✅ تم العثور على زر التقديم (بحث شامل):', button);
+                    return button;
+                }
+            }
+            
+            // لوج تشخيصي للمساعدة
+            console.log('🔍 الأزرار المتاحة في الصفحة:');
+            const allBtns = document.querySelectorAll('button, input[type="submit"], a');
+            allBtns.forEach((btn, index) => {
+                if (btn.offsetWidth > 0 && btn.offsetHeight > 0) {
+                    const text = (btn.textContent || btn.value || '').trim();
+                    if (text.length > 0 && text.length < 50) {
+                        console.log(`زر ${index}: "${text}" - enabled: ${!btn.disabled} - classes: ${btn.className}`);
+                    }
+                }
+            });
+            
+            console.log('❌ لم يتم العثور على زر التقديم');
+            return null;
+        }
+
+        async handleConfirmationDialog() {
+            console.log('🔍 البحث المحسن عن نافذة التأكيد');
+            
+            let attempts = 0;
+            const maxAttempts = 5;
+            
+            while (attempts < maxAttempts) {
+                const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"], .popup');
+                
+                for (const dialog of dialogs) {
+                    if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
+                        const text = dialog.textContent;
+                        
+                        console.log('💬 نافذة منبثقة موجودة:', text.substring(0, 100));
+                        
+                        if (text.includes('هل أنت متأكد') || text.includes('تأكيد') || text.includes('متأكد من التقديم')) {
+                            console.log('✅ تم العثور على نافذة التأكيد');
+                            
+                            const buttons = dialog.querySelectorAll('button, a, input[type="button"]');
+                            for (const btn of buttons) {
+                                const btnText = (btn.textContent || btn.value || '').trim();
+                                console.log('🔍 زر في النافذة:', btnText);
+                                
+                                if (btnText === 'تقديم' || btnText === 'تأكيد' || btnText === 'موافق') {
+                                    console.log('✅ النقر على زر التأكيد:', btnText);
+                                    await this.clickElementImproved(btn);
+                                    await this.wait(2000);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                attempts++;
+                if (attempts < maxAttempts) {
+                    console.log(`⏳ محاولة ${attempts}/${maxAttempts} للعثور على نافذة التأكيد...`);
+                    await this.wait(2000);
+                }
+            }
+            
+            console.log('⚠️ لم يتم العثور على نافذة التأكيد');
+            return false;
+        }
+
+        async handleResultDialog() {
+            console.log('🔍 البحث المحسن عن نافذة النتيجة');
+            
+            let attempts = 0;
+            const maxAttempts = 8;
+            
+            while (attempts < maxAttempts) {
+                const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"], .popup');
+                
+                for (const dialog of dialogs) {
+                    if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
+                        const text = dialog.textContent;
+                        
+                        console.log('💬 فحص نافذة النتيجة:', text.substring(0, 150));
+                        
+                        // نافذة النجاح
+                        if (text.includes('تم التقديم بنجاح') || text.includes('نجح التقديم') || text.includes('تم بنجاح')) {
+                            console.log('✅ تم التقديم بنجاح!');
+                            
+                            const closeButton = this.findCloseButton(dialog);
+                            if (closeButton) {
+                                await this.clickElementImproved(closeButton);
+                                await this.wait(2000);
+                            }
+                            
+                            return { success: true, reason: 'تم التقديم بنجاح' };
+                        }
+                        
+                        // نافذة الرفض
+                        else if (text.includes('عذراً') || text.includes('لا يمكنك التقديم') || text.includes('غير مؤهل') || text.includes('لا يطابق')) {
+                            console.log('❌ تم رفض التقديم');
+                            
+                            const rejectionReason = this.extractRejectionReason(text);
+                            console.log('📋 سبب الرفض:', rejectionReason);
+                            
+                            const closeButton = this.findCloseButton(dialog);
+                            if (closeButton) {
+                                await this.clickElementImproved(closeButton);
+                                await this.wait(2000);
+                            }
+                            
+                            return { 
+                                success: false, 
+                                reason: rejectionReason,
+                                type: 'rejection' 
+                            };
+                        }
+                    }
+                }
+                
+                attempts++;
+                if (attempts < maxAttempts) {
+                    console.log(`⏳ محاولة ${attempts}/${maxAttempts} للعثور على نافذة النتيجة...`);
+                    await this.wait(2000);
+                }
+            }
+            
+            console.log('⚠️ لم يتم العثور على نافذة نتيجة واضحة');
+            return { success: false, reason: 'لم يتم العثور على نتيجة واضحة', type: 'unknown' };
+        }
+        
         async startFromJobList() {
             console.log('📋 البدء من قائمة الوظائف');
             
