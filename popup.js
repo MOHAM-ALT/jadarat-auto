@@ -199,6 +199,20 @@ class JadaratAutoPopup {
                 return;
             }
 
+            // فحص محسن للصفحات المدعومة
+            const supportedPages = [
+                'ExploreJobs',
+                'JobTab=1', 
+                'JobDetails'  // إضافة دعم صفحة التفاصيل
+            ];
+            
+            const isOnSupportedPage = supportedPages.some(page => this.currentTab.url.includes(page));
+            
+            if (!isOnSupportedPage) {
+                this.showError('يرجى الانتقال إلى صفحة الوظائف (قائمة أو تفاصيل)');
+                return;
+            }
+            
             this.isRunning = true;
             this.isPaused = false;
             

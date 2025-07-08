@@ -993,6 +993,28 @@ checkPageType() {
             return false;
         }
 
+        // أضف هذه الدالة بعد دالة checkPageType() مباشرة (السطر 140 تقريباً)
+        async checkPageTypeWithWait() {
+            let attempts = 0;
+            const maxAttempts = 5;
+            
+            while (attempts < maxAttempts) {
+                this.checkPageType();
+                
+                if (this.pageType && this.pageType !== 'unknown') {
+                    console.log(`✅ تم تحديد نوع الصفحة: ${this.pageType}`);
+                    return;
+                }
+                
+                attempts++;
+                console.log(`⏳ محاولة ${attempts}/${maxAttempts} لتحديد نوع الصفحة...`);
+                await this.wait(2000);
+            }
+            
+            console.log('⚠️ فشل في تحديد نوع الصفحة، استخدام النوع الافتراضي');
+            this.pageType = 'unknown';
+        }
+
 async processJob(jobCard, jobIndex) {
             const jobTitle = jobCard.title;
             console.log(`🎯 معالجة الوظيفة ${jobIndex}: ${jobTitle}`);
@@ -1025,6 +1047,8 @@ async processJob(jobCard, jobIndex) {
             let retryCount = 0;
             const maxRetries = 5;
             
+
+
             while (this.pageType !== 'jobDetails' && retryCount < maxRetries) {
                 console.log(`⚠️ لم نصل لصفحة التفاصيل بعد، محاولة ${retryCount + 1}/${maxRetries}`);
                 console.log(`📍 النوع الحالي: ${this.pageType}`);
@@ -1280,33 +1304,30 @@ async applyForJob() {
             }
         }
 
-        findSubmitButton() {
+findSubmitButton() {
             console.log('🔍 البحث المحسن عن زر التقديم');
             
-            // محددات متعددة للبحث
-            const selectors = [
-                'button.btn.btn-primary:contains("تقديم")',
-                'button[data-button]:contains("تقديم")',
-                'button.btn:contains("تقديم")',
-                'input[type="submit"][value="تقديم"]',
-                'a.btn:contains("تقديم")'
+            // البحث المباشر بدلاً من :contains
+            const buttonSelectors = [
+                'button.btn.btn-primary',
+                'button[data-button]',
+                'button.btn',
+                'input[type="submit"]',
+                'a.btn'
             ];
             
             // جرب المحددات المباشرة أولاً
-            for (const selector of selectors) {
-                try {
-                    const elements = document.querySelectorAll(selector.split(':contains')[0]);
-                    for (const element of elements) {
-                        if (element.textContent.trim() === 'تقديم' && 
-                            element.offsetWidth > 0 && 
-                            element.offsetHeight > 0 &&
-                            !element.disabled) {
-                            console.log('✅ عثر على زر التقديم باستخدام:', selector);
-                            return element;
-                        }
+            for (const selector of buttonSelectors) {
+                const elements = document.querySelectorAll(selector);
+                for (const element of elements) {
+                    const text = (element.textContent || element.value || '').trim();
+                    if (text === 'تقديم' && 
+                        element.offsetWidth > 0 && 
+                        element.offsetHeight > 0 &&
+                        !element.disabled) {
+                        console.log('✅ عثر على زر التقديم باستخدام:', selector);
+                        return element;
                     }
-                } catch (e) {
-                    // ignore selector errors
                 }
             }
             
@@ -1341,43 +1362,37 @@ async applyForJob() {
             return null;
         }
 
+// احذف جميع النسخ المكررة واترك هذه النسخة المحسنة فقط
         async handleConfirmationDialog() {
             console.log('🔍 البحث المحسن عن نافذة التأكيد');
             
-            let attempts = 0;
-            const maxAttempts = 5;
-            
-            while (attempts < maxAttempts) {
+            for (let attempt = 0; attempt < 8; attempt++) {
                 const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"], .popup');
                 
                 for (const dialog of dialogs) {
-                    if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
-                        const text = dialog.textContent;
+                    if (!this.isElementVisible(dialog)) continue;
+                    
+                    const text = dialog.textContent;
+                    console.log(`💬 فحص نافذة: ${text.substring(0, 100)}...`);
+                    
+                    if (text.includes('هل أنت متأكد') || text.includes('تأكيد') || text.includes('متأكد من التقديم')) {
+                        console.log('✅ تم العثور على نافذة التأكيد');
                         
-                        console.log('💬 نافذة منبثقة موجودة:', text.substring(0, 100));
-                        
-                        if (text.includes('هل أنت متأكد') || text.includes('تأكيد') || text.includes('متأكد من التقديم')) {
-                            console.log('✅ تم العثور على نافذة التأكيد');
-                            
-                            const buttons = dialog.querySelectorAll('button, a, input[type="button"]');
-                            for (const btn of buttons) {
-                                const btnText = (btn.textContent || btn.value || '').trim();
-                                console.log('🔍 زر في النافذة:', btnText);
-                                
-                                if (btnText === 'تقديم' || btnText === 'تأكيد' || btnText === 'موافق') {
-                                    console.log('✅ النقر على زر التأكيد:', btnText);
-                                    await this.clickElementImproved(btn);
-                                    await this.wait(2000);
-                                    return true;
-                                }
+                        const buttons = dialog.querySelectorAll('button, a, input[type="button"]');
+                        for (const btn of buttons) {
+                            const btnText = (btn.textContent || btn.value || '').trim();
+                            if (btnText === 'تقديم' || btnText === 'تأكيد' || btnText === 'موافق') {
+                                console.log('✅ النقر على زر التأكيد:', btnText);
+                                await this.clickElementImproved(btn);
+                                await this.wait(2000);
+                                return true;
                             }
                         }
                     }
                 }
                 
-                attempts++;
-                if (attempts < maxAttempts) {
-                    console.log(`⏳ محاولة ${attempts}/${maxAttempts} للعثور على نافذة التأكيد...`);
+                if (attempt < 7) {
+                    console.log(`⏳ محاولة ${attempt + 1}/8 للعثور على نافذة التأكيد...`);
                     await this.wait(2000);
                 }
             }
@@ -1447,62 +1462,7 @@ async applyForJob() {
             return { success: false, reason: 'لم يتم العثور على نتيجة واضحة', type: 'unknown' };
         }
 
-    findSubmitButton() {
-        console.log('🔍 البحث عن زر التقديم');
-        
-        // البحث الشامل كبديل
-        const allButtons = document.querySelectorAll('button, input[type="submit"], a');
-        
-        for (const button of allButtons) {
-            const text = (button.textContent || button.value || '').trim();
-            const isVisible = button.offsetWidth > 0 && button.offsetHeight > 0;
-            const isEnabled = !button.disabled && !button.classList.contains('disabled');
-            
-            if (text === 'تقديم' && isVisible && isEnabled) {
-                console.log('✅ تم العثور على زر التقديم:', button);
-                return button;
-            }
-        }
-        
-        console.log('❌ لم يتم العثور على زر التقديم');
-        
-        // لوج تشخيصي
-        console.log('🔍 الأزرار المتاحة:');
-        const allBtns = document.querySelectorAll('button');
-        allBtns.forEach((btn, index) => {
-            if (btn.offsetWidth > 0 && btn.offsetHeight > 0) {
-                console.log(`زر ${index}: "${btn.textContent.trim()}" - classes: ${btn.className}`);
-            }
-        });
-        
-        return null;
-    }
 
-    async handleConfirmationDialog() {
-        console.log('🔍 البحث عن نافذة التأكيد');
-        
-        const dialogs = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
-        
-        for (const dialog of dialogs) {
-            if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
-                const text = dialog.textContent;
-                
-                if (text.includes('هل أنت متأكد من التقديم')) {
-                    console.log('✅ تم العثور على نافذة التأكيد');
-                    
-                    const buttons = dialog.querySelectorAll('button');
-                    for (const btn of buttons) {
-                        if (btn.textContent.trim() === 'تقديم') {
-                            console.log('✅ النقر على زر التأكيد');
-                            await this.clickElementImproved(btn);
-                            await this.wait(3000);
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     async handleResultDialog() {
         console.log('🔍 البحث عن نافذة النتيجة');
@@ -1767,6 +1727,32 @@ async applyForJob() {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    async retryOperation(operation, maxRetries = 3, delay = 2000) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`🔄 محاولة ${attempt}/${maxRetries}...`);
+                const result = await operation();
+                if (result) {
+                    console.log('✅ نجحت العملية');
+                    return result;
+                }
+            } catch (error) {
+                console.error(`❌ فشلت المحاولة ${attempt}:`, error.message);
+                if (attempt === maxRetries) {
+                    throw error;
+                }
+            }
+            
+            if (attempt < maxRetries) {
+                console.log(`⏳ انتظار ${delay}ms قبل المحاولة التالية...`);
+                await this.wait(delay);
+            }
+        }
+        
+        return null;
+    }
+
+    
     getRandomDelay() {
         const base = this.settings.delayTime * 1000;
         const variation = base * 0.3;
