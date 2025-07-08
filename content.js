@@ -1,5 +1,5 @@
-// جدارات أوتو - Content Script الذكي المتكيف 100%
-console.log('🎯 جدارات أوتو: بدء تحميل المحتوى الذكي');
+// جدارات أوتو - Content Script الذكي المتكيف المُصحح 100%
+console.log('🎯 جدارات أوتو: بدء تحميل المحتوى الذكي المحدث');
 
 // منع التكرار
 if (window.jadaratAutoContentLoaded) {
@@ -33,7 +33,7 @@ if (window.jadaratAutoContentLoaded) {
             this.checkPageType();
             this.addVisualIndicator();
             
-            console.log('✅ جدارات أوتو: تم التهيئة بنجاح - النسخة الذكية');
+            console.log('✅ جدارات أوتو: تم التهيئة بنجاح - النسخة المصححة');
         }
 
         initializeListeners() {
@@ -50,18 +50,20 @@ if (window.jadaratAutoContentLoaded) {
             const pageText = document.body.textContent || '';
             const pageHTML = document.body.innerHTML || '';
             
-            // فحص مؤشرات صفحة تفاصيل الوظيفة (أكثر دقة)
+            // فحص مؤشرات صفحة تفاصيل الوظيفة المحدثة (حسب البيانات الفعلية)
             const detailsIndicators = [
-                'وصف الوظيفة',
-                'نوع العمل',
-                'الراتب', 
-                'الجنس',
-                'المنطقة',
-                'المؤهل العلمي',
-                'سنوات الخبرة',
-                'تاريخ بداية النشر',
-                'الدوام',
-                'طبيعة العمل'
+                'الوصف الوظيفي',        // موجود في HTML الفعلي
+                'نوع العمل',            // موجود
+                'الراتب',               // موجود
+                'الجنس',                // موجود
+                'المنطقة',              // موجود
+                'المؤهلات',             // موجود
+                'المهارات',             // موجود
+                'اللغات',               // موجود
+                'تاريخ بداية النشر',     // موجود
+                'تاريخ نهاية النشر',     // موجود
+                'الوظائف المتاحة',       // موجود
+                'فترة العمل'            // موجود
             ];
             
             let detailsScore = 0;
@@ -71,36 +73,45 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
             
+            // فحص وجود block مخصص لتفاصيل الوظيفة
+            const hasJobDetailsBlock = pageHTML.includes('Job.PostDetailsBlock') || 
+                                      pageHTML.includes('data-block="Job.PostDetailsBlock"');
+            
             // فحص وجود زر التقديم (مؤشر قوي على صفحة التفاصيل)
-            const hasSubmitButton = pageHTML.includes('تقديم') && 
-                                   (pageHTML.includes('button') || pageHTML.includes('btn'));
+            const submitButtonExists = document.querySelector('button:contains("تقديم")') || 
+                                      document.querySelector('[data-button*="تقديم"]') ||
+                                      pageHTML.includes('btn btn-primary') && pageHTML.includes('تقديم');
+            
+            // فحص وجود عناصر تفاصيل الوظيفة المميزة
+            const hasJobTitleElement = document.querySelector('span.heading5') !== null;
+            const hasCompanyName = pageHTML.includes('شركة') || pageHTML.includes('مؤسسة');
+            const hasJobId = pageHTML.includes('الرقم التعريفي');
             
             // فحص وجود روابط متعددة للوظائف (مؤشر على القائمة)
             const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
-            const hasMultipleJobs = jobLinks.length >= 3; // 3 أو أكثر = قائمة
+            const hasMultipleJobs = jobLinks.length >= 3;
             
             // فحص وجود pagination
             const hasPagination = document.querySelector('button[aria-label*="next page"], .pagination') ||
                                  pageHTML.includes('pagination');
             
-            // فحص عنوان الصفحة
-            const pageTitle = document.title || '';
-            const isJobDetailsInTitle = pageTitle.includes('تفاصيل') || pageTitle.includes('وظيفة');
-            
-            console.log(`📊 تحليل الصفحة:
-                - نقاط التفاصيل: ${detailsScore}/10
-                - زر التقديم: ${hasSubmitButton}
+            console.log(`📊 تحليل الصفحة المحدث:
+                - نقاط التفاصيل: ${detailsScore}/12
+                - كتلة تفاصيل الوظيفة: ${hasJobDetailsBlock}
+                - زر التقديم: ${submitButtonExists}
+                - عنوان الوظيفة: ${hasJobTitleElement}
+                - اسم الشركة: ${hasCompanyName}
+                - رقم الوظيفة: ${hasJobId}
                 - روابط متعددة: ${hasMultipleJobs} (${jobLinks.length})
                 - صفحات: ${hasPagination}
-                - عنوان الصفحة: ${isJobDetailsInTitle}
-                - URL: ${url.includes('JobDetails')}`);
+                - URL يحتوي JobDetails: ${url.includes('JobDetails')}`);
             
-            // تحديد نوع الصفحة بدقة عالية
-            if ((detailsScore >= 4 || hasSubmitButton || isJobDetailsInTitle) && 
-                url.includes('JobDetails') && 
-                !hasMultipleJobs) {
+            // تحديد نوع الصفحة بدقة محسنة
+            if (url.includes('JobDetails') && 
+                (detailsScore >= 5 || hasJobDetailsBlock || 
+                 (hasJobTitleElement && hasCompanyName) || hasJobId)) {
                 this.pageType = 'jobDetails';
-                console.log('📄 صفحة تفاصيل وظيفة مؤكدة');
+                console.log('✅ صفحة تفاصيل وظيفة مؤكدة');
                 this.analyzeJobDetailsPage();
                 
             } else if (hasMultipleJobs || hasPagination || 
@@ -121,7 +132,7 @@ if (window.jadaratAutoContentLoaded) {
                     - URL: ${url}
                     - تفاصيل: ${detailsScore}
                     - روابط: ${jobLinks.length}
-                    - تقديم: ${hasSubmitButton}`);
+                    - كتلة: ${hasJobDetailsBlock}`);
             }
         }
 
@@ -158,18 +169,33 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         extractCurrentJobTitle() {
+            // محددات محدثة حسب البنية الفعلية
             const titleSelectors = [
-                'h1',
-                '.heading1',
-                '.job-title',
-                '[data-block*="JobTitle"]',
-                '.page-title'
+                'span.heading5',                    // المحدد الفعلي من HTML
+                '.heading5',                        // عام
+                'h1', 'h2', 'h3',                  // عناوين تقليدية
+                '.job-title',                       // محدد عام
+                '[data-block*="JobTitle"]',         // محدد البيانات
+                '.page-title'                       // عنوان الصفحة
             ];
             
             for (const selector of titleSelectors) {
                 const element = document.querySelector(selector);
                 if (element && element.textContent.trim()) {
-                    return element.textContent.trim();
+                    const title = element.textContent.trim();
+                    // تجاهل النصوص القصيرة جداً أو الأرقام فقط
+                    if (title.length > 5 && !/^\d+$/.test(title)) {
+                        return title;
+                    }
+                }
+            }
+            
+            // البحث في عنصر مسمى الوظيفة وفقا للعقد
+            const jobNameElement = document.querySelector('span:contains("مسمى الوظيفة وفقا للعقد")');
+            if (jobNameElement) {
+                const nextSpan = jobNameElement.parentElement.nextElementSibling?.querySelector('span');
+                if (nextSpan && nextSpan.textContent.trim()) {
+                    return nextSpan.textContent.trim();
                 }
             }
             
@@ -507,7 +533,6 @@ if (window.jadaratAutoContentLoaded) {
                     
                     if (!success) {
                         console.log(`⚠️ فشل في الوظيفة ${i + 1}، الانتقال للتالية`);
-                        // لا نتوقف، نتابع للوظيفة التالية
                     }
                     
                     const progress = ((i + 1) / jobCards.length) * 100;
@@ -531,7 +556,6 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         getJobCardsWithRetry(maxRetries = 3) {
-            // كشف الوظائف مع إعادة المحاولة
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 console.log(`🔍 محاولة كشف الوظائف ${attempt}/${maxRetries}`);
                 
@@ -545,7 +569,6 @@ if (window.jadaratAutoContentLoaded) {
                 console.log(`⚠️ لم يتم العثور على وظائف في المحاولة ${attempt}`);
                 
                 if (attempt < maxRetries) {
-                    // انتظار وإعادة تحميل
                     setTimeout(() => {
                         window.scrollTo(0, document.body.scrollHeight / 2);
                     }, 1000 * attempt);
@@ -556,7 +579,6 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         async processJobWithRetry(jobCard, jobIndex, maxRetries = 2) {
-            // معالجة الوظيفة مع إعادة المحاولة
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     console.log(`🎯 محاولة ${attempt}/${maxRetries} لمعالجة: ${jobCard.title}`);
@@ -570,7 +592,6 @@ if (window.jadaratAutoContentLoaded) {
                     if (attempt < maxRetries) {
                         console.log('🔄 إعادة المحاولة...');
                         
-                        // العودة للقائمة قبل إعادة المحاولة
                         try {
                             await this.goBackToJobList();
                         } catch (backError) {
@@ -582,7 +603,6 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
             
-            // فشل في جميع المحاولات
             console.error(`❌ فشل نهائياً في معالجة: ${jobCard.title}`);
             this.stats.skipped++;
             this.stats.total++;
@@ -596,7 +616,6 @@ if (window.jadaratAutoContentLoaded) {
             
             const jobCards = [];
             
-            // محددات متعددة للبحث
             const selectors = [
                 'a[data-link][href*="/Jadarat/JobDetails"]',
                 'a[href*="JobDetails"]',
@@ -638,7 +657,6 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         getJobTitle(link) {
-            // استخراج عنوان الوظيفة مع محددات متعددة
             const titleSelectors = [
                 'span.heading4',
                 '.heading4',
@@ -654,7 +672,6 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
             
-            // البحث في النص المحيط
             const parentText = link.parentElement?.textContent || '';
             if (parentText.length > 10 && parentText.length < 100) {
                 return parentText.trim();
@@ -664,7 +681,6 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         findJobContainer(link) {
-            // البحث عن الحاوي الأب
             let container = link;
             
             for (let i = 0; i < 8; i++) {
@@ -672,7 +688,6 @@ if (window.jadaratAutoContentLoaded) {
                 
                 container = container.parentElement;
                 
-                // التحقق من وجود معلومات الوظيفة
                 const hasJobInfo = container.textContent.includes('المدينة') || 
                                  container.textContent.includes('تاريخ النشر') ||
                                  container.textContent.includes('الوظائف المتاحة');
@@ -686,11 +701,9 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         checkIfAlreadyApplied(container) {
-            // فحص حالة التقديم مع طرق متعددة
             const text = container.textContent || '';
             const html = container.innerHTML || '';
             
-            // فحص النص
             const appliedTexts = ['تم التقدم', 'تم التقديم', 'مقدم عليها'];
             for (const appliedText of appliedTexts) {
                 if (text.includes(appliedText)) {
@@ -698,7 +711,6 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
             
-            // فحص الأيقونة
             if (html.includes('tickcircle.svg') || html.includes('check-circle')) {
                 return true;
             }
@@ -715,10 +727,8 @@ if (window.jadaratAutoContentLoaded) {
                 status: 'processing' 
             });
 
-            // تمييز الرابط
             this.highlightElement(jobCard.link);
 
-            // النقر على الوظيفة مع آلية محسنة
             console.log('👆 النقر على رابط الوظيفة');
             const clickSuccess = await this.clickElementImproved(jobCard.link);
             
@@ -726,14 +736,11 @@ if (window.jadaratAutoContentLoaded) {
                 throw new Error('فشل في النقر على رابط الوظيفة');
             }
             
-            // انتظار التنقل مع تحسينات
             await this.waitForNavigationImproved();
             await this.wait(3000);
             
-            // التحقق من نوع الصفحة
             this.checkPageType();
             
-            // فحص إضافي للتأكد من الوصول لصفحة التفاصيل
             let retryCount = 0;
             const maxRetries = 3;
             
@@ -744,7 +751,6 @@ if (window.jadaratAutoContentLoaded) {
                 this.checkPageType();
                 retryCount++;
                 
-                // إذا لم نصل للتفاصيل، نحاول النقر مرة أخرى
                 if (this.pageType !== 'jobDetails' && retryCount < maxRetries) {
                     console.log('🔄 إعادة محاولة النقر...');
                     await this.clickElementImproved(jobCard.link);
@@ -756,10 +762,8 @@ if (window.jadaratAutoContentLoaded) {
             if (this.pageType === 'jobDetails') {
                 console.log('✅ وصلنا لصفحة التفاصيل');
                 
-                // التعامل مع النوافذ المنبثقة
                 await this.handlePopups();
                 
-                // فحص التقديم المسبق
                 const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
                 
                 if (alreadyApplied) {
@@ -770,16 +774,13 @@ if (window.jadaratAutoContentLoaded) {
                     });
                     console.log('⏭️ مقدم عليها مسبقاً');
                 } else {
-                    // محاولة التقديم
                     const result = await this.applyForJobWithRetry();
-                    
                     this.handleApplicationResult(result, jobTitle);
                 }
 
                 this.stats.total++;
                 this.sendMessage('UPDATE_STATS', { stats: this.stats });
 
-                // العودة للقائمة
                 await this.goBackToJobList();
                 
             } else {
@@ -788,7 +789,6 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         handleApplicationResult(result, jobTitle) {
-            // معالجة نتيجة التقديم
             if (result.success) {
                 this.stats.applied++;
                 this.sendMessage('UPDATE_CURRENT_JOB', { 
@@ -851,21 +851,50 @@ if (window.jadaratAutoContentLoaded) {
             
             await this.wait(2000);
             
+            const pageText = document.body.textContent || '';
+            const pageHTML = document.body.innerHTML || '';
+            
+            // مؤشرات التقديم المسبق المحدثة
+            const appliedIndicators = [
+                'استعراض طلب التقديم',
+                'تم التقديم على هذه الوظيفة',
+                'طلب مقدم',
+                'تم التقدم',
+                'مُقدم عليها',
+                'تقديم مكتمل'
+            ];
+            
+            // فحص النص
+            for (const indicator of appliedIndicators) {
+                if (pageText.includes(indicator)) {
+                    console.log(`✅ وجد مؤشر التقديم المسبق: ${indicator}`);
+                    return true;
+                }
+            }
+            
+            // فحص الأزرار - إذا كان النص "استعراض" بدلاً من "تقديم"
             const allButtons = document.querySelectorAll('button, a');
             
             for (const button of allButtons) {
                 const text = button.textContent.trim();
-                if (text.includes('استعراض طلب التقديم')) {
+                if (text.includes('استعراض طلب التقديم') || text.includes('استعراض الطلب')) {
                     console.log('✅ وجد زر "استعراض طلب التقديم"');
                     return true;
                 }
             }
             
+            // فحص إذا كان زر التقديم غير نشط أو معطل
+            const submitButton = this.findSubmitButton();
+            if (submitButton && (submitButton.disabled || submitButton.classList.contains('disabled'))) {
+                console.log('✅ زر التقديم معطل - قد يكون مُقدم عليها');
+                return true;
+            }
+            
+            console.log('❌ لم يتم العثور على مؤشرات التقديم المسبق');
             return false;
         }
 
         async applyForJobWithRetry(maxRetries = 2) {
-            // تطبيق للوظيفة مع إعادة المحاولة
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     console.log(`📝 محاولة التقديم ${attempt}/${maxRetries}`);
@@ -873,7 +902,7 @@ if (window.jadaratAutoContentLoaded) {
                     const result = await this.applyForJob();
                     
                     if (result.success || result.type === 'rejection') {
-                        return result; // نجح أو رُفض (كلاهما نتيجة واضحة)
+                        return result;
                     }
                     
                     if (attempt < maxRetries) {
@@ -926,6 +955,34 @@ if (window.jadaratAutoContentLoaded) {
         findSubmitButton() {
             console.log('🔍 البحث عن زر التقديم');
             
+            // محددات محدثة حسب البنية الفعلية
+            const submitSelectors = [
+                'button[data-button*="تقديم"]',                    // المحدد المباشر
+                'button.btn.btn-primary:contains("تقديم")',        // الفئة الفعلية
+                'button:contains("تقديم")',                       // عام
+                'input[type="submit"][value*="تقديم"]',            // إدخال submit
+                '[data-button]:contains("تقديم")',                // محدد البيانات
+                'a[href*="apply"]:contains("تقديم")',             // رابط تقديم
+                '.btn-primary:contains("تقديم")'                  // فئة أساسية
+            ];
+            
+            // البحث باستخدام المحددات المحدثة
+            for (const selector of submitSelectors) {
+                const elements = document.querySelectorAll(selector.replace(':contains("تقديم")', ''));
+                
+                for (const element of elements) {
+                    const text = (element.textContent || element.value || '').trim();
+                    const isVisible = element.offsetWidth > 0 && element.offsetHeight > 0;
+                    const isEnabled = !element.disabled && !element.classList.contains('disabled');
+                    
+                    if (text === 'تقديم' && isVisible && isEnabled) {
+                        console.log('✅ تم العثور على زر التقديم:', element);
+                        return element;
+                    }
+                }
+            }
+            
+            // البحث الشامل كبديل
             const allButtons = document.querySelectorAll('button, input[type="submit"], a');
             
             for (const button of allButtons) {
@@ -934,12 +991,22 @@ if (window.jadaratAutoContentLoaded) {
                 const isEnabled = !button.disabled && !button.classList.contains('disabled');
                 
                 if (text === 'تقديم' && isVisible && isEnabled) {
-                    console.log('✅ تم العثور على زر التقديم');
+                    console.log('✅ تم العثور على زر التقديم (البحث الشامل):', button);
                     return button;
                 }
             }
             
             console.log('❌ لم يتم العثور على زر التقديم');
+            
+            // لوج تشخيصي
+            console.log('🔍 الأزرار المتاحة:');
+            const allBtns = document.querySelectorAll('button');
+            allBtns.forEach((btn, index) => {
+                if (btn.offsetWidth > 0 && btn.offsetHeight > 0) {
+                    console.log(`زر ${index}: "${btn.textContent.trim()}" - classes: ${btn.className}`);
+                }
+            });
+            
             return null;
         }
 
@@ -1050,12 +1117,10 @@ if (window.jadaratAutoContentLoaded) {
         async goBackToJobList() {
             console.log('🔙 العودة لقائمة الوظائف');
             
-            // محاولة الضغط على زر الرجوع أولاً
             const backButton = document.querySelector('button[aria-label*="back"], .back-button, [class*="back"]');
             if (backButton && backButton.offsetWidth > 0) {
                 await this.clickElementImproved(backButton);
             } else {
-                // استخدام history.back()
                 window.history.back();
             }
             
@@ -1069,7 +1134,6 @@ if (window.jadaratAutoContentLoaded) {
                 window.scrollTo(0, 0);
             } else {
                 console.log('⚠️ قد تكون العودة لم تنجح، محاولة التنقل المباشر');
-                // محاولة الذهاب لقائمة الوظائف مباشرة
                 const exploreJobsLink = document.querySelector('a[href*="ExploreJobs"], a[href*="JobTab=1"]');
                 if (exploreJobsLink) {
                     await this.clickElementImproved(exploreJobsLink);
@@ -1149,27 +1213,22 @@ if (window.jadaratAutoContentLoaded) {
             if (!element) return false;
             
             try {
-                // حفظ URL الحالي للمقارنة
                 const currentUrl = window.location.href;
                 console.log('🎯 URL الحالي:', currentUrl);
                 
-                // إزالة target لتجنب التبويب الجديد
                 if (element.tagName === 'A') {
                     element.removeAttribute('target');
                     element.target = '_self';
                     console.log('🔗 رابط الوظيفة:', element.href);
                 }
                 
-                // تمرير العنصر إلى منتصف الشاشة
                 element.scrollIntoView({ 
                     behavior: 'smooth', 
                     block: 'center' 
                 });
                 
-                // انتظار التمرير
                 await this.wait(1500);
                 
-                // إيقاف أي أحداث أخرى مؤقتاً
                 const stopPropagation = (e) => {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
@@ -1177,30 +1236,24 @@ if (window.jadaratAutoContentLoaded) {
                 
                 document.addEventListener('click', stopPropagation, { capture: true, once: true });
                 
-                // محاولة التنقل المباشر أولاً (الأكثر موثوقية)
                 if (element.href && element.tagName === 'A') {
                     console.log('🎯 التنقل المباشر للرابط');
                     window.location.href = element.href;
                     return true;
                 }
                 
-                // محاولة النقر العادي
                 console.log('🎯 محاولة النقر العادي');
                 element.click();
                 
-                // انتظار قصير للتحقق من التغيير
                 await this.wait(2000);
                 
-                // فحص إذا تغير URL
                 if (window.location.href !== currentUrl) {
                     console.log('✅ تم التنقل بنجاح');
                     return true;
                 }
                 
-                // إذا لم يتغير URL، نجرب طرق أخرى
                 console.log('⚠️ لم يتغير URL، جرب طرق أخرى');
                 
-                // محاولة إثارة أحداث مختلفة
                 const events = ['mousedown', 'mouseup', 'click'];
                 for (const eventType of events) {
                     const event = new MouseEvent(eventType, {
@@ -1215,13 +1268,11 @@ if (window.jadaratAutoContentLoaded) {
                 
                 await this.wait(2000);
                 
-                // فحص مرة أخرى
                 if (window.location.href !== currentUrl) {
                     console.log('✅ تم التنقل بعد الأحداث المتعددة');
                     return true;
                 }
                 
-                // كآخر محاولة - النقر على العنصر الأب
                 if (element.parentElement) {
                     console.log('🎯 محاولة النقر على العنصر الأب');
                     const parentLink = element.closest('a');
@@ -1260,24 +1311,17 @@ if (window.jadaratAutoContentLoaded) {
             
             return new Promise((resolve) => {
                 let attempts = 0;
-                const maxAttempts = 150; // زيادة المحاولات
+                const maxAttempts = 150;
                 const currentUrl = window.location.href;
                 let lastPageContent = document.body.innerHTML.length;
                 
                 const checkForChange = () => {
                     attempts++;
                     
-                    // فحص تغيير URL
                     const urlChanged = window.location.href !== currentUrl;
-                    
-                    // فحص تغيير المحتوى (أكثر دقة)
                     const currentPageContent = document.body.innerHTML.length;
                     const contentChanged = Math.abs(currentPageContent - lastPageContent) > 1000;
-                    
-                    // فحص حالة التحميل
                     const pageLoaded = document.readyState === 'complete';
-                    
-                    // فحص وجود محتوى جديد (مؤشرات صفحة تفاصيل الوظيفة)
                     const hasJobDetails = document.body.textContent.includes('وصف الوظيفة') || 
                                         document.body.textContent.includes('نوع العمل') ||
                                         document.body.textContent.includes('المؤهل العلمي');
@@ -1288,7 +1332,7 @@ if (window.jadaratAutoContentLoaded) {
                         console.log(`✅ التنقل مكتمل - URL تغير: ${urlChanged}, محتوى تغير: ${contentChanged}, تفاصيل موجودة: ${hasJobDetails}`);
                         setTimeout(resolve, 1000);
                     } else {
-                        setTimeout(checkForChange, 300); // فحص كل 300ms
+                        setTimeout(checkForChange, 300);
                     }
                 };
                 
