@@ -759,7 +759,12 @@ if (window.jadaratAutoContentLoaded) {
                     await this.wait(2000);
                 }
             }
-            
+        console.log('⏳ انتظار تحميل صفحة التفاصيل (محسن)...');
+        await this.waitForNavigationImproved();
+        
+        // فحص نوع الصفحة مع الانتظار
+        await this.checkPageTypeWithWait();
+
             if (this.pageType !== 'jobDetails') {
             console.log(`⚠️ لم نصل لصفحة التفاصيل، النوع الحالي: ${this.pageType}`);
             console.log('🔄 محاولة إضافية للوصول...');
