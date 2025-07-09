@@ -1305,35 +1305,108 @@ async handleMessage(message, sendResponse) {
             }
         }
 
-        async goBackToJobList() {
-            console.log('🔙 العودة لقائمة الوظائف');
-            
-            const backButton = document.querySelector('button[aria-label*="back"], .back-button, [class*="back"]');
-            if (backButton && backButton.offsetWidth > 0) {
-                await this.clickElementImproved(backButton);
-            } else {
-                window.history.back();
-            }
-            
+async goBackToJobList() {
+    console.log('🔙 العودة لقائمة الوظائف');
+    
+    const backButton = document.querySelector('button[aria-label*="back"], .back-button, [class*="back"]');
+    if (backButton && backButton.offsetWidth > 0) {
+        await this.clickElementImproved(backButton);
+    } else {
+        window.history.back();
+    }
+    
+    await this.waitForNavigationImproved();
+    await this.wait(4000);
+    
+    this.checkPageType();
+    
+    if (this.pageType === 'jobList') {
+        console.log('✅ تم العودة بنجاح');
+        window.scrollTo(0, 0);
+        
+        // 🚀 الإضافة الجديدة: استكمال معالجة باقي الوظائف
+        if (this.isRunning && !this.isPaused) {
+            console.log('🔄 استكمال معالجة باقي الوظائف في نفس الصفحة...');
+            await this.wait(2000);
+            await this.continueProcessingCurrentPage();
+        }
+    } else {
+        console.log('⚠️ قد تكون العودة لم تنجح، محاولة التنقل المباشر');
+        const exploreJobsLink = document.querySelector('a[href*="ExploreJobs"], a[href*="JobTab=1"]');
+        if (exploreJobsLink) {
+            await this.clickElementImproved(exploreJobsLink);
             await this.waitForNavigationImproved();
-            await this.wait(4000);
-            
+            await this.wait(3000);
             this.checkPageType();
             
-            if (this.pageType === 'jobList') {
-                console.log('✅ تم العودة بنجاح');
-                window.scrollTo(0, 0);
-            } else {
-                console.log('⚠️ قد تكون العودة لم تنجح، محاولة التنقل المباشر');
-                const exploreJobsLink = document.querySelector('a[href*="ExploreJobs"], a[href*="JobTab=1"]');
-                if (exploreJobsLink) {
-                    await this.clickElementImproved(exploreJobsLink);
-                    await this.waitForNavigationImproved();
-                    await this.wait(3000);
-                    this.checkPageType();
-                }
+            // 🚀 الإضافة الجديدة: استكمال بعد التنقل المباشر
+            if (this.pageType === 'jobList' && this.isRunning && !this.isPaused) {
+                console.log('🔄 استكمال معالجة بعد التنقل المباشر...');
+                await this.wait(2000);
+                await this.continueProcessingCurrentPage();
             }
         }
+    }
+}
+async continueProcessingCurrentPage() {
+    try {
+        console.log('🔄 استكمال معالجة الصفحة الحالية...');
+        
+        // التأكد من تحميل المحتوى
+        await this.waitForContentToLoad();
+        
+        // الحصول على قائمة الوظائف المحدثة
+        const jobCards = this.getJobCardsWithRetry();
+        console.log(`📋 وجد ${jobCards.length} وظيفة في الصفحة`);
+        
+        if (jobCards.length === 0) {
+            console.log('⚠️ لا توجد وظائف متبقية، الانتقال للصفحة التالية...');
+            await this.goToNextPage();
+            return;
+        }
+        
+        // العثور على الوظيفة التالية التي لم يتم معالجتها
+        for (let i = this.currentJobIndex; i < jobCards.length; i++) {
+            if (!this.isRunning || this.isPaused) {
+                console.log('🛑 تم إيقاف العملية أثناء المعالجة');
+                return;
+            }
+            
+            const jobCard = jobCards[i];
+            console.log(`📝 معالجة الوظيفة ${i + 1}/${jobCards.length}: ${jobCard.title}`);
+            
+            // تحديث المؤشر الحالي
+            this.currentJobIndex = i + 1;
+            
+            const success = await this.processJobWithRetry(jobCard, i + 1);
+            
+            if (!success) {
+                console.log(`⚠️ فشل في الوظيفة ${i + 1}، الانتقال للتالية`);
+            }
+            
+            const progress = ((i + 1) / jobCards.length) * 100;
+            this.sendMessage('UPDATE_PROGRESS', { 
+                progress: progress, 
+                text: `الوظيفة ${i + 1}/${jobCards.length}` 
+            });
+
+            await this.wait(this.getRandomDelay());
+        }
+        
+        // إعادة تعيين المؤشر
+        this.currentJobIndex = 0;
+        
+        // الانتقال للصفحة التالية
+        console.log('✅ انتهت معالجة الصفحة، الانتقال للصفحة التالية...');
+        await this.goToNextPage();
+        
+    } catch (error) {
+        console.error('❌ خطأ في استكمال معالجة الصفحة:', error);
+        this.sendMessage('AUTOMATION_ERROR', { 
+            error: error.message 
+        });
+    }
+}
 
         async waitForNavigationImproved() {
             console.log('⏳ انتظار التنقل المحسن...');
@@ -1454,15 +1527,15 @@ async handleMessage(message, sendResponse) {
                     text: `العثور على ${this.totalJobs} وظيفة في الصفحة ${this.currentPage}` 
                 });
 
-                for (let i = 0; i < jobCards.length; i++) {
-                    if (!this.isRunning || this.isPaused) {
+            for (let i = this.currentJobIndex; i < jobCards.length; i++) {                    if (!this.isRunning || this.isPaused) {
                         console.log('🛑 تم إيقاف العملية');
                         return;
                     }
 
                     const jobCard = jobCards[i];
                     console.log(`📝 معالجة الوظيفة ${i + 1}/${jobCards.length}: ${jobCard.title}`);
-                    
+                    this.currentJobIndex = i + 1;
+
                     const success = await this.processJobWithRetry(jobCard, i + 1);
                     
                     if (!success) {
@@ -1775,6 +1848,7 @@ async handleMessage(message, sendResponse) {
                 console.log('➡️ الانتقال للصفحة التالية');
                 this.currentPage++;
                 
+                this.currentJobIndex = 0; // إعادة تعيين مؤشر الوظائف للصفحة الجديدة
                 await this.clickElementImproved(nextButton);
                 await this.waitForNavigationImproved();
                 await this.wait(5000);
