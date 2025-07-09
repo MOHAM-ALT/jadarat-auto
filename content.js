@@ -66,11 +66,12 @@ if (window.jadaratAutoContentLoaded) {
             if (url.includes('JobDetails')) {
                 console.log('🔍 URL يحتوي على JobDetails، فحص المحتوى...');
                 
-                if (pageText.length < 500) {
-                    console.log('⚠️ المحتوى قصير جداً، انتظار إضافي...');
-                    setTimeout(() => this.checkPageType(), 3000);
-                    return;
-                }
+                if (pageText.length < 1200) {
+    console.log('⚠️ المحتوى قصير جداً، انتظار إضافي...');
+    console.log(`📊 طول المحتوى الحالي: ${pageText.length} (المطلوب: 1200+)`);
+    setTimeout(() => this.checkPageType(), 5000); // زيادة وقت الانتظار
+    return;
+}
                 
                 // فحص مؤشرات صفحة التفاصيل المحدثة
                 if (this.analyzeJobDetailsPage()) {
@@ -346,6 +347,7 @@ if (window.jadaratAutoContentLoaded) {
 
         findSubmitButtonImproved() {
             console.log('🔍 البحث المحسن عن زر التقديم');
+            
             
             // البحث المباشر بمحددات محسنة
             const buttonSelectors = [
@@ -860,7 +862,7 @@ async handleMessage(message, sendResponse) {
                     const contentLength = document.body.textContent.length;
                     const hasBasicElements = document.querySelectorAll('button, a, input').length > 5;
                     
-                    if (contentLength > 500 && hasBasicElements) {
+                    if (contentLength > 1500 && hasBasicElements) {
                         console.log('✅ تم تحميل المحتوى بنجاح');
                         return true;
                     }
@@ -868,7 +870,7 @@ async handleMessage(message, sendResponse) {
                 
                 attempts++;
                 console.log(`⏳ محاولة تحميل ${attempts}/${maxAttempts}...`);
-                await this.wait(1500);
+                await this.wait(3000);
             }
             
             console.log('⚠️ انتهت محاولات انتظار التحميل');
@@ -1236,7 +1238,7 @@ async handleMessage(message, sendResponse) {
                     block: 'center' 
                 });
                 
-                await this.wait(1500);
+                await this.wait(3000);
                 
                 const stopPropagation = (e) => {
                     e.stopPropagation();
@@ -1451,7 +1453,63 @@ async continueProcessingCurrentPage() {
                 setTimeout(checkNavigation, 1000);
             });
         }
-
+async waitForJobDetailsFullLoad() {
+    console.log('⏳ انتظار التحميل الكامل لصفحة التفاصيل...');
+    
+    let attempts = 0;
+    const maxAttempts = 20; // زيادة عدد المحاولات
+    
+    while (attempts < maxAttempts) {
+        attempts++;
+        
+        // انتظار أطول بين كل فحص
+        await this.wait(3000);
+        
+        console.log(`🔍 فحص التحميل - محاولة ${attempts}/${maxAttempts}`);
+        
+        // فحص URL أولاً
+        if (!window.location.href.includes('JobDetails')) {
+            console.log('❌ لم نصل لصفحة التفاصيل بعد');
+            continue;
+        }
+        
+        // فحص طول المحتوى
+        const contentLength = document.body.textContent.length;
+        console.log(`📄 طول المحتوى الحالي: ${contentLength}`);
+        
+        if (contentLength < 1500) {
+            console.log('⏳ المحتوى قصير، انتظار أكثر...');
+            continue;
+        }
+        
+        // فحص وجود العناصر المهمة
+        const hasJobTitle = document.querySelector('span.heading5, .heading5');
+        const hasJobContent = document.body.textContent.includes('الوصف الوظيفي');
+        const pageReady = document.readyState === 'complete';
+        
+        console.log(`🔍 فحص العناصر:
+            - عنوان الوظيفة: ${!!hasJobTitle}
+            - محتوى الوظيفة: ${hasJobContent}
+            - الصفحة مكتملة: ${pageReady}
+            - طول المحتوى: ${contentLength}`);
+        
+        if (hasJobTitle && hasJobContent && pageReady && contentLength > 1500) {
+            console.log('✅ تم تحميل صفحة التفاصيل بالكامل!');
+            
+            // انتظار إضافي للتأكد من تحميل الأزرار
+            await this.wait(4000);
+            console.log('✅ انتظار إضافي مكتمل');
+            return true;
+        }
+        
+        console.log(`⏳ لم يكتمل التحميل بعد، محاولة ${attempts}/${maxAttempts}`);
+    }
+    
+    console.log('⚠️ انتهت محاولات انتظار التحميل الكامل');
+    // حتى لو فشل، امنح وقت إضافي وحاول المتابعة
+    await this.wait(5000);
+    return false;
+}
         async navigateToJobListDirect() {
             console.log('🔄 التنقل المباشر لقائمة الوظائف...');
             
@@ -1743,12 +1801,23 @@ async continueProcessingCurrentPage() {
             }
             
             console.log('⏳ انتظار التنقل للصفحة...');
-            await this.waitForNavigationImproved();
-            
-            await this.waitForContentToLoad();
-            
-            await this.checkPageTypeWithWait();
-            
+await this.waitForNavigationImproved();
+
+// 🚀 إضافة انتظار محسن لتحميل صفحة التفاصيل
+console.log('⏳ انتظار تحميل كامل لصفحة التفاصيل...');
+await this.waitForJobDetailsFullLoad();
+// 🚀 إضافة انتظار محسن لتحميل صفحة التفاصيل
+        // فحص إضافي للتأكد من التحميل الكامل
+console.log('🔍 فحص نهائي للتحميل...');
+const finalContentLength = document.body.textContent.length;
+console.log(`📊 طول المحتوى النهائي: ${finalContentLength}`);
+
+if (finalContentLength < 1500) {
+    console.log('⚠️ المحتوى لا يزال قصير، انتظار إضافي...');
+    await this.wait(8000); // انتظار طويل
+    await this.checkPageTypeWithWait();
+}
+
             let retryCount = 0;
             const maxRetries = 5;
 
