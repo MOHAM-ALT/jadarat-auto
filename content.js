@@ -156,22 +156,72 @@ if (window.jadaratAutoContentLoaded) {
 
         // ⚡ انتظار جاهزية صفحة تفاصيل الوظيفة
         async waitForJobDetailsToLoad() {
-            this.debugLog('📄 انتظار تحميل تفاصيل الوظيفة...');
+            this.debugLog('📄 انتظار تحميل تفاصيل الوظيفة مع مراقبة تلقائية...');
             
-            return await this.waitForCondition(() => {
-                const hasJobTitle = document.querySelector('span.heading5, .heading5');
-                const hasJobContent = document.body.textContent.includes('الوصف الوظيفي') ||
-                                     document.body.textContent.includes('نوع العمل');
-                const contentLength = document.body.textContent.length;
-                const pageReady = document.readyState === 'complete';
-                const urlCorrect = window.location.href.includes('JobDetails');
+            return new Promise((resolve, reject) => {
+                let attempts = 0;
+                const maxAttempts = 40; // 40 ثانية حد أقصى
+                let observer;
                 
-                return hasJobTitle && hasJobContent && contentLength > 2000 && pageReady && urlCorrect;
-            }, {
-                maxWaitTime: 20000,
-                interval: 600,
-                debugName: 'تحميل تفاصيل الوظيفة',
-                timeoutMessage: 'فشل في تحميل تفاصيل الوظيفة'
+                const checkContent = () => {
+                    attempts++;
+                    
+                    // فحص شامل للمحتوى
+                    const hasJobTitle = document.querySelector('span.heading5, .heading5');
+                    const hasJobBlock = document.querySelector('[data-block="Job.ApplyJob"]') || 
+                                       document.querySelector('button[data-button]');
+                    const hasJobContent = document.body.textContent.includes('الوصف الوظيفي') ||
+                                         document.body.textContent.includes('نوع العمل') ||
+                                         document.body.textContent.includes('الرقم التعريفي');
+                    const contentLength = document.body.textContent.length;
+                    const pageReady = document.readyState === 'complete';
+                    const urlCorrect = window.location.href.includes('JobDetails');
+                    
+                    // شروط النجاح المحسنة
+                    const isReady = hasJobTitle && hasJobContent && contentLength > 2000 && pageReady && urlCorrect;
+                    
+                    if (isReady) {
+                        this.debugLog(`✅ تحميل تفاصيل الوظيفة: تم بنجاح في ${(attempts * 0.5).toFixed(1)}ث`);
+                        
+                        if (observer) observer.disconnect();
+                        
+                        // انتظار إضافي قصير للاستقرار
+                        setTimeout(() => {
+                            resolve(true);
+                        }, 1500);
+                        return;
+                    }
+                    
+                    if (attempts >= maxAttempts) {
+                        this.debugLog(`❌ انتهت محاولات تحميل التفاصيل بعد ${maxAttempts * 0.5}ث`);
+                        if (observer) observer.disconnect();
+                        reject(new Error('فشل في تحميل تفاصيل الوظيفة'));
+                        return;
+                    }
+                    
+                    // لوج التقدم كل 10 محاولات
+                    if (attempts % 10 === 0) {
+                        this.debugLog(`⏳ تحميل التفاصيل: محاولة ${attempts}/${maxAttempts} - المحتوى: ${contentLength} أحرف`);
+                    }
+                    
+                    // مواصلة المراقبة
+                    setTimeout(checkContent, 500);
+                };
+                
+                // مراقبة تغييرات DOM للاستجابة السريعة
+                observer = new MutationObserver(() => {
+                    // إعادة فحص عند تغيير المحتوى
+                    setTimeout(checkContent, 100);
+                });
+                
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: false
+                });
+                
+                // بدء المراقبة
+                setTimeout(checkContent, 300);
             });
         }
 
@@ -196,44 +246,82 @@ if (window.jadaratAutoContentLoaded) {
 
         // 🎯 العثور على أزرار التقديم المحتملة والنقر
         async findAndClickSubmitButton() {
-            this.debugLog('🔍 البحث السريع عن أزرار التقديم...');
+            this.debugLog('🔍 البحث التلقائي والنقر فور التحميل...');
             
-            // البحث السريع (مرة واحدة فقط)
+            // انتظار قصير جداً للاستقرار
+            await this.wait(1000);
+            
+            // البحث الفوري عن الأزرار
             const possibleButtons = this.getAllPossibleSubmitButtons();
             
-            this.debugLog(`📋 تم العثور على ${possibleButtons.length} زر محتمل`);
+            if (possibleButtons.length === 0) {
+                this.debugLog('🎯 لم توجد أزرار واضحة، البحث في كل العناصر...');
+                return await this.tryClickAnySubmitElement();
+            }
             
-            // جرب النقر على كل زر محتمل
+            this.debugLog(`📋 تم العثور على ${possibleButtons.length} زر محتمل - النقر فوراً`);
+            
+            // جرب النقر على كل زر بدون انتظار طويل
             for (let i = 0; i < possibleButtons.length; i++) {
                 const button = possibleButtons[i];
-                this.debugLog(`🎯 تجربة الزر ${i + 1}: "${button.textContent.trim()}"`);
+                this.debugLog(`🎯 نقر فوري على الزر ${i + 1}: "${button.textContent.trim()}"`);
                 
                 const clickResult = await this.tryClickAndCheckResult(button);
                 if (clickResult.success) {
-                    this.debugLog(`✅ نجح النقر على الزر ${i + 1}! المرحلة التالية: ${clickResult.nextStep}`);
+                    this.debugLog(`✅ نجح النقر الفوري على الزر ${i + 1}!`);
                     return clickResult;
                 }
                 
-                this.debugLog(`❌ فشل الزر ${i + 1}, جرب التالي...`);
-                await this.wait(1000); // انتظار قصير بين المحاولات
+                // انتظار قصير جداً بين المحاولات
+                await this.wait(300);
             }
             
-            this.debugLog('❌ فشل في جميع أزرار التقديم');
-            return { success: false, reason: 'لم يتم العثور على زر تقديم فعال' };
+            this.debugLog('❌ فشل في جميع أزرار التقديم، محاولة البحث الشامل...');
+            return await this.tryClickAnySubmitElement();
         }
 
-        getAllPossibleSubmitButtons() {
-            const allButtons = document.querySelectorAll(
-                'button, input[type="submit"], input[type="button"], a[role="button"]'
-            );
+getAllPossibleSubmitButtons() {
+            this.debugLog('🔍 البحث في HTML الفعلي للموقع...');
+            
+            // البحث المحسن حسب بنية الموقع الفعلية
+            const submitSelectors = [
+                'div[data-block="Job.ApplyJob"] button',
+                'button[data-button].btn.btn-primary',
+                'button.btn.btn-primary[type="button"]',
+                'button.btn-primary'
+            ];
             
             const possibleButtons = [];
             
-            for (const button of allButtons) {
-                if (this.couldBeSubmitButton(button)) {
-                    possibleButtons.push(button);
+            // جرب المحددات المباشرة أولاً
+            for (const selector of submitSelectors) {
+                try {
+                    const buttons = document.querySelectorAll(selector);
+                    for (const button of buttons) {
+                        if (this.couldBeSubmitButton(button)) {
+                            possibleButtons.push(button);
+                            this.debugLog(`✅ وجد زر باستخدام: ${selector}`);
+                        }
+                    }
+                } catch (error) {
+                    this.debugLog(`⚠️ خطأ في selector: ${selector}`);
                 }
             }
+            
+            // إذا لم نجد شيء، ابحث في كل الأزرار
+            if (possibleButtons.length === 0) {
+                this.debugLog('🔍 لم توجد أزرار مباشرة، البحث الشامل...');
+                
+                const allButtons = document.querySelectorAll('button, input[type="submit"], a[role="button"]');
+                
+                for (const button of allButtons) {
+                    if (this.couldBeSubmitButton(button)) {
+                        possibleButtons.push(button);
+                    }
+                }
+            }
+            
+            this.debugLog(`📊 إجمالي الأزرار المحتملة: ${possibleButtons.length}`);
             
             // ترتيب حسب الأولوية
             return this.sortButtonsByPriority(possibleButtons);
@@ -353,11 +441,28 @@ if (window.jadaratAutoContentLoaded) {
 
         detectPageChange() {
             // فحص تغييرات في الصفحة تدل على نجاح النقر
-            const hasNewContent = document.body.textContent.includes('تم التقديم') ||
-                                 document.body.textContent.includes('طلب مقدم') ||
-                                 document.querySelector('button:contains("استعراض طلب التقديم")');
-                                 
-            return hasNewContent;
+            const pageText = document.body.textContent;
+            
+            // فحص مؤشرات التقديم الناجح
+            const successIndicators = [
+                'تم التقديم بنجاح',
+                'تم التقديم على هذه الوظيفة',
+                'طلب مقدم',
+                'تقديم مكتمل'
+            ];
+            
+            // فحص وجود زر استعراض بدون CSS selector خاطئ
+            const allButtons = document.querySelectorAll('button, a');
+            let hasReviewButton = false;
+            for (const btn of allButtons) {
+                const btnText = btn.textContent.trim();
+                if (btnText.includes('استعراض طلب التقديم') || btnText.includes('استعراض الطلب')) {
+                    hasReviewButton = true;
+                    break;
+                }
+            }
+            
+            return successIndicators.some(indicator => pageText.includes(indicator)) || hasReviewButton;
         }
 
         // 🔄 انتظار نتائج التقديم (كل 5 ثوان)
@@ -1382,6 +1487,39 @@ if (window.jadaratAutoContentLoaded) {
             }
             
             return 'سبب غير محدد';
+        }
+        async tryClickAnySubmitElement() {
+            this.debugLog('🔍 البحث الشامل في جميع العناصر عن نص "تقديم"...');
+            
+            // البحث في كل العناصر المرئية
+            const allElements = document.querySelectorAll('*');
+            
+            for (const element of allElements) {
+                const text = element.textContent ? element.textContent.trim() : '';
+                const isVisible = element.offsetWidth > 0 && element.offsetHeight > 0;
+                const isClickable = element.tagName === 'BUTTON' || 
+                                   element.tagName === 'A' || 
+                                   element.getAttribute('role') === 'button' ||
+                                   element.style.cursor === 'pointer';
+                
+                if (isVisible && isClickable && text && (
+                    text === 'تقديم' || 
+                    text.includes('استعراض طلب التقديم') ||
+                    text.includes('استعراض الطلب')
+                )) {
+                    this.debugLog(`🎯 وجد عنصر مناسب: ${element.tagName} - "${text}"`);
+                    
+                    const clickResult = await this.tryClickAndCheckResult(element);
+                    if (clickResult.success) {
+                        return clickResult;
+                    }
+                    
+                    await this.wait(300);
+                }
+            }
+            
+            this.debugLog('❌ لم يوجد أي عنصر قابل للنقر');
+            return { success: false, reason: 'لم يوجد أي عنصر قابل للنقر' };
         }
 
         handleApplicationResult(result, jobTitle) {
