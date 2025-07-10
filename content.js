@@ -66,12 +66,12 @@ if (window.jadaratAutoContentLoaded) {
             if (url.includes('JobDetails')) {
                 console.log('🔍 URL يحتوي على JobDetails، فحص المحتوى...');
                 
-                if (pageText.length < 1200) {
-                    console.log('⚠️ المحتوى قصير جداً، انتظار إضافي...');
-                    console.log(`📊 طول المحتوى الحالي: ${pageText.length} (المطلوب: 1200+)`);
-                    setTimeout(() => this.checkPageType(), 5000);
-                    return;
-                }
+                if (pageText.length < 2000) {  // رفع الحد الأدنى إلى 2000
+    console.log('⚠️ المحتوى قصير جداً، انتظار إضافي...');
+    console.log(`📊 طول المحتوى الحالي: ${pageText.length} (المطلوب: 2000+)`);
+    setTimeout(() => this.checkPageType(), 8000);  // زيادة الانتظار إلى 8 ثوان
+    return;
+}
                 
                 // فحص مؤشرات صفحة التفاصيل المحدثة
                 if (this.analyzeJobDetailsPage()) {
@@ -347,7 +347,7 @@ if (window.jadaratAutoContentLoaded) {
             
             // ⏳ انتظار 4 ثواني قبل البحث
             console.log('⏳ انتظار 4 ثواني قبل البحث عن زر التقديم...');
-            await this.wait(4000);
+            await this.wait(6000);  // زيادة إلى 8 ثوان
             
             // البحث المباشر بمحددات محسنة
             const buttonSelectors = [
@@ -1013,7 +1013,7 @@ if (window.jadaratAutoContentLoaded) {
                 }
                 
                 console.log('⏳ انتظار نافذة النتيجة...');
-                await this.wait(4000);
+                await this.wait(8000);  // زيادة إلى 8 ثوان
                 
                 const result = await this.handleResultDialog();
                 
@@ -1329,7 +1329,7 @@ if (window.jadaratAutoContentLoaded) {
             }
             
             await this.waitForNavigationImproved();
-            await this.wait(4000);
+            await this.wait(8000);  // زيادة إلى 8 ثوان
             
             this.checkPageType();
             
@@ -1340,7 +1340,7 @@ if (window.jadaratAutoContentLoaded) {
                 // 🚀 الإضافة الجديدة: استكمال معالجة باقي الوظائف
                 if (this.isRunning && !this.isPaused) {
                     console.log('🔄 استكمال معالجة باقي الوظائف في نفس الصفحة...');
-                    await this.wait(2000);
+                    await this.wait(5000);
                     await this.continueProcessingCurrentPage();
                 }
             } else {
@@ -1487,7 +1487,7 @@ if (window.jadaratAutoContentLoaded) {
                 const contentLength = document.body.textContent.length;
                 console.log(`📄 طول المحتوى الحالي: ${contentLength}`);
                 
-                if (contentLength < 1500) {
+                if (contentLength < 2500) {
                     console.log('⏳ المحتوى قصير، انتظار أكثر...');
                     continue;
                 }
@@ -1502,10 +1502,10 @@ if (window.jadaratAutoContentLoaded) {
                     - الصفحة مكتملة: ${pageReady}
                     - طول المحتوى: ${contentLength}`);
                 
-                if (hasJobTitle && hasJobContent && pageReady && contentLength > 1500) {
+if (hasJobTitle && hasJobContent && pageReady && contentLength > 2500) {
                     console.log('✅ تم تحميل صفحة التفاصيل بالكامل!');
                     
-                    await this.wait(4000);
+                    await this.wait(8000);  // زيادة إلى 8 ثوان
                     console.log('✅ انتظار إضافي مكتمل');
                     return true;
                 }
@@ -1574,7 +1574,7 @@ if (window.jadaratAutoContentLoaded) {
             try {
                 console.log('🔄 معالجة الصفحة الحالية');
                 
-                await this.wait(4000);
+                await this.wait(8000);  // زيادة إلى 8 ثوان
                 
                 const jobCards = this.getJobCardsWithRetry();
                 this.totalJobs = jobCards.length;
@@ -1628,28 +1628,52 @@ if (window.jadaratAutoContentLoaded) {
             }
         }
 
-        getJobCardsWithRetry(maxRetries = 3) {
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                console.log(`🔍 محاولة كشف الوظائف ${attempt}/${maxRetries}`);
-                
-                const jobCards = this.getJobCards();
-                
-                if (jobCards.length > 0) {
-                    console.log(`✅ تم العثور على ${jobCards.length} وظيفة`);
-                    return jobCards;
-                }
-                
-                console.log(`⚠️ لم يتم العثور على وظائف في المحاولة ${attempt}`);
-                
-                if (attempt < maxRetries) {
-                    setTimeout(() => {
-                        window.scrollTo(0, document.body.scrollHeight / 2);
-                    }, 1000 * attempt);
-                }
-            }
-            
-            return [];
+        getJobCardsWithRetry(maxRetries = 5) {  // زيادة المحاولات إلى 5
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`🔍 محاولة كشف الوظائف ${attempt}/${maxRetries}`);
+        
+        // تحفيز تحميل المحتوى بـ scroll
+        if (attempt > 1) {
+            window.scrollTo(0, 0);
+            setTimeout(() => {
+                window.scrollTo(0, document.body.scrollHeight);
+                setTimeout(() => {
+                    window.scrollTo(0, document.body.scrollHeight / 2);
+                }, 1000);
+            }, 1000);
         }
+        
+        // انتظار أطول بين المحاولات
+        if (attempt > 1) {
+            const waitTime = 3000 * attempt;  // انتظار متزايد
+            console.log(`⏳ انتظار ${waitTime/1000} ثانية قبل المحاولة...`);
+            setTimeout(() => {}, waitTime);
+        }
+        
+        const jobCards = this.getJobCards();
+        
+        if (jobCards.length > 0) {
+            console.log(`✅ تم العثور على ${jobCards.length} وظيفة`);
+            return jobCards;
+        }
+        
+        console.log(`⚠️ لم يتم العثور على وظائف في المحاولة ${attempt}`);
+        
+        // انتظار قبل المحاولة التالية
+        if (attempt < maxRetries) {
+            const waitTime = 4000 * attempt;
+            console.log(`⏳ انتظار ${waitTime/1000} ثانية قبل المحاولة التالية...`);
+            
+            // انتظار متزايد مع scroll
+            setTimeout(() => {
+                window.scrollTo(0, document.body.scrollHeight / 2);
+            }, waitTime);
+        }
+    }
+    
+    console.log('❌ فشل في العثور على وظائف نهائياً');
+    return [];
+}
 
         getJobCards() {
             console.log('🔍 البحث عن بطاقات الوظائف');
@@ -1823,11 +1847,11 @@ if (window.jadaratAutoContentLoaded) {
             const finalContentLength = document.body.textContent.length;
             console.log(`📊 طول المحتوى النهائي: ${finalContentLength}`);
 
-            if (finalContentLength < 1500) {
-                console.log('⚠️ المحتوى لا يزال قصير، انتظار إضافي...');
-                await this.wait(8000);
-                await this.checkPageTypeWithWait();
-            }
+           if (finalContentLength < 2500) {  // رفع إلى 2500
+    console.log('⚠️ المحتوى لا يزال قصير، انتظار إضافي...');
+    await this.wait(12000);  // زيادة إلى 12 ثانية
+    await this.checkPageTypeWithWait();
+}
 
             let retryCount = 0;
             const maxRetries = 5;
