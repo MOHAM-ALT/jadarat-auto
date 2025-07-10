@@ -20,6 +20,24 @@
         <!-- Main Sections -->
         <div class="main-content">
             
+            <!-- Status Section -->
+            <div class="section status-section">
+                <div class="section-header">
+                    <span class="section-icon">🔗</span>
+                    <h2>حالة الاتصال</h2>
+                </div>
+                
+                <div class="connection-status" id="connectionStatus">
+                    <div class="status-indicator" id="statusIndicator">
+                        <span class="status-dot"></span>
+                        <span id="statusText">جاري الفحص...</span>
+                    </div>
+                    <div class="connection-details" id="connectionDetails">
+                        <span class="detail-text">فحص الاتصال مع الصفحة...</span>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Control Panel -->
             <div class="section">
                 <div class="section-header">
@@ -28,7 +46,7 @@
                 </div>
                 
                 <div class="control-buttons">
-                    <button class="btn btn-primary" id="startBtn">
+                    <button class="btn btn-primary" id="startBtn" disabled>
                         <span class="btn-icon">▶</span>
                         بدء التشغيل
                     </button>
@@ -65,7 +83,7 @@
                         <select id="modeSelect" class="select-input">
                             <option value="normal">عادي</option>
                             <option value="smart">ذكي</option>
-                            <option value="aggressive">سريع</option>
+                            <option value="fast">سريع</option>
                         </select>
                     </div>
 
@@ -87,19 +105,19 @@
                 </div>
 
                 <div class="stats-grid">
-                    <div class="stat-card">
+                    <div class="stat-card success">
                         <div class="stat-number" id="appliedCount">0</div>
                         <div class="stat-label">تم التقديم</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card danger">
                         <div class="stat-number" id="rejectedCount">0</div>
                         <div class="stat-label">تم الرفض</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card warning">
                         <div class="stat-number" id="skippedCount">0</div>
                         <div class="stat-label">تم التخطي</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card info">
                         <div class="stat-number" id="totalCount">0</div>
                         <div class="stat-label">إجمالي الوظائف</div>
                     </div>
@@ -116,6 +134,7 @@
                 <div class="progress-container">
                     <div class="progress-bar">
                         <div class="progress-fill" id="progressFill"></div>
+                        <div class="progress-percentage" id="progressPercentage">0%</div>
                     </div>
                     <div class="progress-text" id="progressText">جاهز للبدء</div>
                 </div>
@@ -137,7 +156,7 @@
                         <span class="btn-icon">🔄</span>
                         استكمال من النقطة الأخيرة
                     </button>
-                    <button class="btn btn-warning" id="restartBtn">
+                    <button class="btn btn-warning" id="restartBtn" disabled>
                         <span class="btn-icon">🔄</span>
                         البدء من جديد
                     </button>
@@ -153,11 +172,11 @@
                 </div>
 
                 <div class="rejection-buttons">
-                    <button class="btn btn-success" id="exportBtn">
+                    <button class="btn btn-success" id="exportBtn" disabled>
                         <span class="btn-icon">📥</span>
                         تصدير للاكسل
                     </button>
-                    <button class="btn btn-warning" id="clearRejectionBtn">
+                    <button class="btn btn-warning" id="clearRejectionBtn" disabled>
                         <span class="btn-icon">🗑</span>
                         مسح البيانات
                     </button>
@@ -168,17 +187,89 @@
                 </div>
             </div>
 
+            <!-- Debug Section (يظهر فقط عند وجود مشاكل) -->
+            <div class="section debug-section" id="debugSection" style="display: none;">
+                <div class="section-header">
+                    <span class="section-icon">🐛</span>
+                    <h2>معلومات التشخيص</h2>
+                </div>
+
+                <div class="debug-info">
+                    <div class="debug-item">
+                        <label>نوع الصفحة:</label>
+                        <span id="debugPageType">-</span>
+                    </div>
+                    <div class="debug-item">
+                        <label>URL الحالي:</label>
+                        <span id="debugCurrentUrl">-</span>
+                    </div>
+                    <div class="debug-item">
+                        <label>آخر خطأ:</label>
+                        <span id="debugLastError">-</span>
+                    </div>
+                </div>
+
+                <div class="debug-buttons">
+                    <button class="btn btn-info" id="debugReconnectBtn">
+                        <span class="btn-icon">🔌</span>
+                        إعادة الاتصال
+                    </button>
+                    <button class="btn btn-warning" id="debugReloadBtn">
+                        <span class="btn-icon">🔄</span>
+                        إعادة تحميل الصفحة
+                    </button>
+                </div>
+            </div>
+
         </div>
 
         <!-- Footer -->
         <div class="footer">
-            <div class="status-indicator" id="statusIndicator">
-                <span class="status-dot"></span>
-                <span id="statusText">غير متصل</span>
+            <div class="footer-status">
+                <div class="status-indicator" id="footerStatusIndicator">
+                    <span class="status-dot"></span>
+                    <span id="footerStatusText">غير متصل</span>
+                </div>
+                <div class="version">v1.0.1</div>
             </div>
-            <div class="version">v1.0.1</div>
+            
+            <div class="footer-links">
+                <button class="link-btn" id="helpBtn">مساعدة</button>
+                <button class="link-btn" id="aboutBtn">حول</button>
+            </div>
         </div>
 
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">جاري التحميل...</div>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="error-modal" id="errorModal" style="display: none;">
+        <div class="error-content">
+            <div class="error-header">
+                <span class="error-icon">⚠️</span>
+                <h3>خطأ في الاتصال</h3>
+            </div>
+            <div class="error-body">
+                <p id="errorMessage">حدث خطأ غير متوقع</p>
+                <div class="error-suggestions">
+                    <h4>الحلول المقترحة:</h4>
+                    <ul>
+                        <li>تأكد من أنك في موقع جدارات (jadarat.sa)</li>
+                        <li>قم بإعادة تحميل الصفحة</li>
+                        <li>أعد تشغيل المتصفح</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="error-footer">
+                <button class="btn btn-primary" id="errorRetryBtn">إعادة المحاولة</button>
+                <button class="btn btn-secondary" id="errorCloseBtn">إغلاق</button>
+            </div>
+        </div>
     </div>
 
     <script src="popup.js"></script>
