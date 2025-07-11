@@ -126,7 +126,17 @@ class JadaratAutoBackground {
                     const hasPermissions = await this.checkPermissions();
                     sendResponse({ hasPermissions });
                     break;
+case 'CLEAR_REJECTED_JOBS':
+    await chrome.storage.local.remove(['rejectedJobs']);
+    sendResponse({ success: true });
+    break;
 
+case 'GET_REJECTED_COUNT':
+    const rejectedJobs = await chrome.storage.local.get(['rejectedJobs']);
+    const count = rejectedJobs.rejectedJobs ? rejectedJobs.rejectedJobs.length : 0;
+    sendResponse({ count });
+    break;
+    
                 default:
                     // Forward message to appropriate tab
                     if (sender.tab) {
@@ -194,9 +204,9 @@ class JadaratAutoBackground {
             
             // Create blob and download URL
             // Create blob and download URL
+// Create blob and download URL
 const blob = new Blob(['\ufeff' + fullCSV], { type: 'text/csv;charset=utf-8;' });
-const url = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\ufeff' + fullCSV);
-            
+const url = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\ufeff' + fullCSV);            
             // Generate filename with timestamp
             const timestamp = new Date().toISOString().split('T')[0];
             const filename = `jadarat_rejections_${timestamp}.csv`;
