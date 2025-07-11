@@ -193,8 +193,9 @@ class JadaratAutoBackground {
             const fullCSV = csvHeader + csvContent;
             
             // Create blob and download URL
-            const blob = new Blob(['\ufeff' + fullCSV], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
+            // Create blob and download URL
+const blob = new Blob(['\ufeff' + fullCSV], { type: 'text/csv;charset=utf-8;' });
+const url = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\ufeff' + fullCSV);
             
             // Generate filename with timestamp
             const timestamp = new Date().toISOString().split('T')[0];

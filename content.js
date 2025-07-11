@@ -2100,7 +2100,7 @@ async continueProcessingCurrentPage() {
         await this.waitForJobsToLoad();
         
         // الحصول على قائمة الوظائف المحدثة
-        const jobCards = await this.getJobCardsImproved();
+const jobCards = await this.getJobCards();
         this.debugLog(`📋 وجد ${jobCards.length} وظيفة متاحة للمعالجة`);
         
         if (jobCards.length === 0) {
