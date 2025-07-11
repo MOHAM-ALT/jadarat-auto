@@ -23,6 +23,16 @@ if (window.jadaratAutoContentLoaded) {
                 rejected: 0,
                 total: 0
             };
+// نظام الذاكرة الدائمة للوظائف المعالجة
+this.jobMemory = {
+    processedJobs: new Set(), // وظائف تم معالجتها (نجح أو رفض)
+    rejectedJobs: new Set(),  // وظائف مرفوضة خصيصاً
+    appliedJobs: new Set(),   // وظائف تم التقديم عليها بنجاح
+    lastProcessedDate: null   // تاريخ آخر معالجة
+};
+
+// تحميل الذاكرة من التخزين المحلي
+this.loadJobMemory();
 
             this.currentPage = 1;
             this.currentJobIndex = 0;
@@ -58,6 +68,123 @@ if (window.jadaratAutoContentLoaded) {
             
             this.debugLog('✅ جدارات أوتو: تم التهيئة بنجاح - النسخة المحسنة والمصححة');
         }
+// ===============================
+// نظام إدارة ذاكرة الوظائف
+// ===============================
+
+async loadJobMemory() {
+    try {
+        const result = await chrome.storage.local.get(['jobMemory']);
+        if (result.jobMemory) {
+            // استعادة البيانات من التخزين
+            this.jobMemory.processedJobs = new Set(result.jobMemory.processedJobs || []);
+            this.jobMemory.rejectedJobs = new Set(result.jobMemory.rejectedJobs || []);
+            this.jobMemory.appliedJobs = new Set(result.jobMemory.appliedJobs || []);
+            this.jobMemory.lastProcessedDate = result.jobMemory.lastProcessedDate;
+            
+            this.debugLog(`🧠 تم تحميل الذاكرة: ${this.jobMemory.processedJobs.size} وظيفة معالجة، ${this.jobMemory.rejectedJobs.size} مرفوضة`);
+        } else {
+            this.debugLog('🧠 ذاكرة جديدة - لا توجد بيانات سابقة');
+        }
+    } catch (error) {
+        this.debugLog('❌ خطأ في تحميل الذاكرة:', error);
+    }
+}
+
+async saveJobMemory() {
+    try {
+        const memoryData = {
+            processedJobs: Array.from(this.jobMemory.processedJobs),
+            rejectedJobs: Array.from(this.jobMemory.rejectedJobs),
+            appliedJobs: Array.from(this.jobMemory.appliedJobs),
+            lastProcessedDate: new Date().toISOString()
+        };
+        
+        await chrome.storage.local.set({ jobMemory: memoryData });
+        this.debugLog('💾 تم حفظ الذاكرة بنجاح');
+    } catch (error) {
+        this.debugLog('❌ خطأ في حفظ الذاكرة:', error);
+    }
+}
+
+generateJobId(jobCard) {
+    // إنشاء معرف فريد للوظيفة
+    const jobTitle = jobCard.title || 'unknown';
+    const jobUrl = jobCard.link ? jobCard.link.href : '';
+    
+    // استخراج معرف من الرابط
+    const urlMatch = jobUrl.match(/Param=([^&]+)/);
+    const urlId = urlMatch ? urlMatch[1] : '';
+    
+    // إنشاء هاش بسيط
+    const titleHash = this.simpleHash(jobTitle);
+    const urlHash = this.simpleHash(urlId);
+    
+    return `${titleHash}_${urlHash}`;
+}
+
+simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // تحويل إلى 32bit integer
+    }
+    return Math.abs(hash).toString(36); // تحويل إلى base36
+}
+
+markJobAsProcessed(jobCard, status) {
+    const jobId = this.generateJobId(jobCard);
+    
+    this.jobMemory.processedJobs.add(jobId);
+    
+    if (status === 'applied') {
+        this.jobMemory.appliedJobs.add(jobId);
+        this.debugLog(`✅ تم وضع علامة نجاح: ${jobCard.title} (${jobId})`);
+    } else if (status === 'rejected') {
+        this.jobMemory.rejectedJobs.add(jobId);
+        this.debugLog(`❌ تم وضع علامة رفض: ${jobCard.title} (${jobId})`);
+    }
+    
+    // حفظ الذاكرة فوراً
+    this.saveJobMemory();
+}
+
+isJobAlreadyProcessed(jobCard) {
+    const jobId = this.generateJobId(jobCard);
+    const isProcessed = this.jobMemory.processedJobs.has(jobId);
+    
+    if (isProcessed) {
+        const isRejected = this.jobMemory.rejectedJobs.has(jobId);
+        const isApplied = this.jobMemory.appliedJobs.has(jobId);
+        
+        this.debugLog(`🧠 الوظيفة معالجة مسبقاً: ${jobCard.title} - ${isRejected ? 'مرفوضة' : isApplied ? 'مقدم عليها' : 'معالجة'}`);
+        return true;
+    }
+    
+    return false;
+}
+
+async clearJobMemory() {
+    this.jobMemory = {
+        processedJobs: new Set(),
+        rejectedJobs: new Set(),
+        appliedJobs: new Set(),
+        lastProcessedDate: null
+    };
+    
+    await this.saveJobMemory();
+    this.debugLog('🧠 تم مسح الذاكرة بالكامل');
+}
+
+getMemoryStats() {
+    return {
+        totalProcessed: this.jobMemory.processedJobs.size,
+        totalRejected: this.jobMemory.rejectedJobs.size,
+        totalApplied: this.jobMemory.appliedJobs.size,
+        lastDate: this.jobMemory.lastProcessedDate
+    };
+}
 
         // 🔧 نظام التشخيص المتقدم
         debugLog(message, ...args) {
@@ -1257,7 +1384,15 @@ getAllPossibleSubmitButtons() {
                         sendResponse({ success: true });
                         this.stopAutomation();
                         break;
-                        
+                        case 'CLEAR_JOB_MEMORY':
+    sendResponse({ success: true });
+    this.clearJobMemory();
+    break;
+    
+case 'GET_MEMORY_STATS':
+    const memoryStats = this.getMemoryStats();
+    sendResponse({ stats: memoryStats });
+    break;
                     default:
                         sendResponse({ success: false, error: 'Unknown action' });
                 }
@@ -1439,8 +1574,8 @@ getAllPossibleSubmitButtons() {
                     const applicationResult = await this.applyForJobImproved();
                     this.debugLog('📊 نتيجة التقديم:', applicationResult);
 
-                    if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
-                        this.handleApplicationResult(applicationResult, jobTitle);
+                if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
+    this.handleApplicationResult(applicationResult, jobTitle, jobCard);
                         this.debugLog('✅ تم التعامل مع نتيجة التقديم');
                     } else {
                         this.debugLog('⚠️ لم يتم التقديم بشكل صحيح، تسجيل كتخطي');
@@ -1621,35 +1756,47 @@ findElementsByText(selector) {
             return results;
         }
 
-        handleApplicationResult(result, jobTitle) {
-            if (result.success) {
-                this.stats.applied++;
-                this.sendMessage('UPDATE_CURRENT_JOB', { 
-                    jobTitle: jobTitle, 
-                    status: 'success' 
-                });
-                this.debugLog('✅ تم التقديم بنجاح');
-                
-            } else if (result.type === 'rejection') {
-                this.stats.rejected = (this.stats.rejected || 0) + 1;
-                this.saveRejectionData(jobTitle, result.reason);
-                this.sendMessage('UPDATE_CURRENT_JOB', { 
-                    jobTitle: jobTitle, 
-                    status: 'rejected',
-                    reason: result.reason
-                });
-                this.debugLog('❌ تم رفض التقديم:', result.reason);
-                
-            } else {
-                this.stats.skipped++;
-                this.sendMessage('UPDATE_CURRENT_JOB', { 
-                    jobTitle: jobTitle, 
-                    status: 'error',
-                    reason: result.reason
-                });
-                this.debugLog('⚠️ فشل التقديم:', result.reason);
-            }
-        }
+handleApplicationResult(result, jobTitle, jobCard) {
+    if (result.success) {
+        this.stats.applied++;
+        
+        // **حفظ في الذاكرة كنجاح**
+        this.markJobAsProcessed(jobCard, 'applied');
+        
+        this.sendMessage('UPDATE_CURRENT_JOB', { 
+            jobTitle: jobTitle, 
+            status: 'success' 
+        });
+        this.debugLog('✅ تم التقديم بنجاح وحفظ في الذاكرة');
+        
+    } else if (result.type === 'rejection') {
+        this.stats.rejected = (this.stats.rejected || 0) + 1;
+        
+        // **حفظ في الذاكرة كرفض**
+        this.markJobAsProcessed(jobCard, 'rejected');
+        
+        this.saveRejectionData(jobTitle, result.reason);
+        this.sendMessage('UPDATE_CURRENT_JOB', { 
+            jobTitle: jobTitle, 
+            status: 'rejected',
+            reason: result.reason
+        });
+        this.debugLog('❌ تم رفض التقديم وحفظ في الذاكرة:', result.reason);
+        
+    } else {
+        this.stats.skipped++;
+        
+        // **حفظ في الذاكرة كمعالجة (فشل)**
+        this.markJobAsProcessed(jobCard, 'processed');
+        
+        this.sendMessage('UPDATE_CURRENT_JOB', { 
+            jobTitle: jobTitle, 
+            status: 'error',
+            reason: result.reason
+        });
+        this.debugLog('⚠️ فشل التقديم وحفظ في الذاكرة:', result.reason);
+    }
+}
 
         async saveRejectionData(jobTitle, rejectionReason) {
             try {
@@ -2099,47 +2246,72 @@ async continueProcessingCurrentPage() {
         }
 
         // 🚀 تحسين العثور على الوظائف
-        async getJobCardsImproved() {
-            this.debugLog('🔍 البحث المحسن عن بطاقات الوظائف');
-            
-            // محاولة العثور على الوظائف مباشرة
-            let jobCards = this.getJobCards();
-            
-            if (jobCards.length > 0) {
-                this.debugLog(`✅ تم العثور على ${jobCards.length} وظيفة مباشرة`);
-                return jobCards;
-            }
-            
-            // إذا لم نجد وظائف، جرب تحفيز التحميل
-            this.debugLog('🔄 لم توجد وظائف، محاولة تحفيز التحميل...');
-            
-            // تحفيز التحميل بـ scroll متدرج
-            window.scrollTo(0, 0);
-            await this.wait(2000);
-            window.scrollTo(0, document.body.scrollHeight / 2);
-            await this.wait(2000);
-            window.scrollTo(0, document.body.scrollHeight);
-            await this.wait(3000);
-            window.scrollTo(0, 0);
-            await this.wait(2000);
-            
-            // محاولة ثانية
-            jobCards = this.getJobCards();
-            
-            if (jobCards.length > 0) {
-                this.debugLog(`✅ تم العثور على ${jobCards.length} وظيفة بعد التحفيز`);
-                return jobCards;
-            }
-            
-            // محاولة انتظار أطول
-            this.debugLog('⏳ انتظار إضافي لتحميل الوظائف...');
-            await this.wait(5000);
-            
-            jobCards = this.getJobCards();
-            this.debugLog(`📊 النتيجة النهائية: ${jobCards.length} وظيفة`);
-            
-            return jobCards;
+ getJobCards() {
+    this.debugLog('🔍 البحث عن بطاقات الوظائف مع فحص الذاكرة');
+    
+    const jobCards = [];
+    
+    const selectors = [
+        'a[data-link][href*="/Jadarat/JobDetails"]',
+        'a[href*="JobDetails"]',
+        'a[href*="Param="]'
+    ];
+    
+    let jobLinks = [];
+    for (const selector of selectors) {
+        jobLinks = document.querySelectorAll(selector);
+        if (jobLinks.length > 0) {
+            this.debugLog(`🔗 تم العثور على ${jobLinks.length} رابط باستخدام: ${selector}`);
+            break;
         }
+    }
+    
+    let skippedFromMemory = 0;
+    let skippedAlreadyApplied = 0;
+    
+    for (const link of jobLinks) {
+        const jobTitle = this.getJobTitle(link);
+        const jobContainer = this.findJobContainer(link);
+        
+        if (jobContainer) {
+            const jobCard = {
+                link: link,
+                container: jobContainer,
+                title: jobTitle
+            };
+            
+            // **فحص الذاكرة أولاً**
+            if (this.isJobAlreadyProcessed(jobCard)) {
+                skippedFromMemory++;
+                this.debugLog(`🧠 تخطي من الذاكرة: ${jobTitle}`);
+                continue;
+            }
+            
+            // **فحص العلامة المرئية ثانياً**
+            const alreadyApplied = this.checkIfAlreadyApplied(jobContainer);
+            if (alreadyApplied) {
+                skippedAlreadyApplied++;
+                this.debugLog(`⏭️ تخطي مُقدم عليها: ${jobTitle}`);
+                
+                // إضافة للذاكرة كوظيفة مقدم عليها
+                this.markJobAsProcessed(jobCard, 'applied');
+                continue;
+            }
+            
+            // وظيفة جديدة قابلة للمعالجة
+            jobCards.push(jobCard);
+            this.debugLog(`✅ وظيفة متاحة: ${jobTitle}`);
+        }
+    }
+
+    this.debugLog(`📊 الفلترة النهائية:
+        - وظائف متاحة: ${jobCards.length}
+        - متخطاة من الذاكرة: ${skippedFromMemory}
+        - متخطاة (مقدم عليها): ${skippedAlreadyApplied}
+        - إجمالي الروابط: ${jobLinks.length}`);
+    
+    return jobCards;
+}
 
         getJobCards() {
             this.debugLog('🔍 البحث عن بطاقات الوظائف');

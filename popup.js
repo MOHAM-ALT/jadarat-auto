@@ -763,7 +763,22 @@ class JadaratAutoPopup {
             }
         }
     }
-
+async clearJobMemory() {
+    if (confirm('هل أنت متأكد من مسح ذاكرة الوظائف المعالجة؟\n\nسيتم التقديم مجدداً على جميع الوظائف المرفوضة سابقاً.')) {
+        try {
+            // إرسال أمر مسح الذاكرة لـ content script
+            this.sendMessageFireAndForget({ action: 'CLEAR_JOB_MEMORY' });
+            
+            // مسح الذاكرة من التخزين المحلي
+            await chrome.storage.local.remove(['jobMemory']);
+            
+            this.showNotification('تم مسح ذاكرة الوظائف بنجاح');
+        } catch (error) {
+            console.error('Error clearing job memory:', error);
+            this.showError('خطأ في مسح ذاكرة الوظائف');
+        }
+    }
+}
     showHelp() {
         const helpText = `
 مساعدة جدارات أوتو:
