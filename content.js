@@ -1,7 +1,7 @@
 // جدارات أوتو - Content Script المُحسن والمُصحح بالكامل
 console.log('🎯 جدارات أوتو: بدء تحميل المحتوى الذكي المحسن والمصحح');
 
-// منع التكرار
+// منع التكرارة
 if (window.jadaratAutoContentLoaded) {
     console.log('جدارات أوتو: المحتوى محمل مسبقاً');
 } else {
@@ -1954,7 +1954,8 @@ findElementsByText(selector) {
                         return;
                     }
                 }
-                
+                 
+
                 await this.waitForJobsToLoad();
                 
                 const jobCards = await this.getJobCardsImproved();
