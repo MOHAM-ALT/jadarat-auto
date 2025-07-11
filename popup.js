@@ -1,13 +1,15 @@
 // جدارات أوتو - Popup Script المُصحح نهائياً - حل شامل لمشاكل الاتصال
 class JadaratAutoPopup {
-    constructor() {
-        this.isRunning = false;
-        this.isPaused = false;
-        this.currentTab = null;
-        this.connectionAttempts = 0;
-        this.maxConnectionAttempts = 5;
-        this.connectionTimeout = 10000; // 10 ثواني
-        this.isConnected = false;
+constructor() {
+    this.isRunning = false;
+    this.isPaused = false;
+    this.currentTab = null;
+    this.connectionAttempts = 0;
+    this.maxConnectionAttempts = 3; // تقليل المحاولات
+    this.connectionTimeout = 5000; // تقليل المهلة الزمنية
+    this.isConnected = false;
+    this.initializationComplete = false;
+    
         
         this.stats = {
             applied: 0,
@@ -162,112 +164,192 @@ class JadaratAutoPopup {
         }
     }
 
-    async establishConnection() {
-        console.log('📡 محاولة تأسيس الاتصال...');
-        
-        for (let attempt = 1; attempt <= this.maxConnectionAttempts; attempt++) {
-            try {
-                console.log(`🔄 محاولة الاتصال ${attempt}/${this.maxConnectionAttempts}`);
+async establishConnection() {
+    console.log('📡 محاولة تأسيس الاتصال المحسنة...');
+    
+    // إعادة تعيين المتغيرات
+    this.isConnected = false;
+    this.connectionAttempts = 0;
+    
+    for (let attempt = 1; attempt <= this.maxConnectionAttempts; attempt++) {
+        try {
+            console.log(`🔄 محاولة الاتصال ${attempt}/${this.maxConnectionAttempts}`);
+            this.updateConnectionDetails(`محاولة ${attempt}/${this.maxConnectionAttempts}...`);
+
+            // تأكد من وجود التبويب
+            if (!this.currentTab || !this.currentTab.id) {
+                console.log('❌ لا يوجد تبويب صالح');
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                this.currentTab = tab;
                 
-                this.updateConnectionDetails(`محاولة ${attempt}/${this.maxConnectionAttempts}...`);
+                if (!tab || !tab.url || !tab.url.includes('jadarat.sa')) {
+                    throw new Error('يرجى الانتقال إلى موقع جدارات');
+                }
+            }
 
-                // محاولة ping
-                const response = await this.sendMessageWithTimeout({ action: 'PING' }, 8000);
+            // حقن content script مباشرة (لضمان وجوده)
+            await this.injectContentScript();
+            
+            // انتظار قصير للتحميل
+            await this.delay(2000);
 
-                if (response && response.status === 'active') {
-                    console.log('✅ نجح الاتصال!');
-                    this.handleSuccessfulConnection(response);
+            // محاولة ping
+            const response = await this.sendMessageWithTimeout({ action: 'PING' }, 4000);
+
+            if (response && (response.status === 'active' || response.status === 'no_response')) {
+                console.log('✅ نجح الاتصال!');
+                this.handleSuccessfulConnection(response);
+                return;
+            }
+
+            // محاولة إضافية مع إعادة حقن
+            if (attempt === this.maxConnectionAttempts) {
+                console.log('🔄 محاولة أخيرة مع إعادة تحميل content script...');
+                await this.forceReloadContentScript();
+                await this.delay(3000);
+                
+                const finalResponse = await this.sendMessageWithTimeout({ action: 'PING' }, 3000);
+                if (finalResponse) {
+                    console.log('✅ نجح الاتصال في المحاولة الأخيرة!');
+                    this.handleSuccessfulConnection(finalResponse);
                     return;
                 }
+            }
 
-                console.log('⚠️ لا يوجد رد، محاولة حقن content script...');
-                await this.injectContentScript();
-
-                // محاولة ping بعد الحقن
-                const retryResponse = await this.sendMessageWithTimeout({ action: 'PING' }, 5000);
-                
-                if (retryResponse && retryResponse.status === 'active') {
-                    console.log('✅ نجح الاتصال بعد الحقن!');
-                    this.handleSuccessfulConnection(retryResponse);
-                    return;
-                }
-
-            } catch (error) {
-                console.error(`❌ فشلت المحاولة ${attempt}:`, error.message);
-                
-                if (attempt < this.maxConnectionAttempts) {
-                    await this.delay(2000 * attempt); // انتظار متزايد
-                } else {
-                    this.handleConnectionFailure(error);
-                }
+        } catch (error) {
+            console.error(`❌ فشلت المحاولة ${attempt}:`, error.message);
+            
+            if (attempt < this.maxConnectionAttempts) {
+                await this.delay(1500 * attempt);
+            } else {
+                this.handleConnectionFailure(error);
             }
         }
     }
+}
 
-    async sendMessageWithTimeout(message, timeoutMs = 8000) {
-        return new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
+async sendMessageWithTimeout(message, timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+        let isResolved = false;
+        
+        const timeoutId = setTimeout(() => {
+            if (!isResolved) {
+                isResolved = true;
                 reject(new Error('Message timeout'));
-            }, timeoutMs);
+            }
+        }, timeoutMs);
 
-            try {
-                chrome.tabs.sendMessage(this.currentTab.id, message, (response) => {
+        try {
+            chrome.tabs.sendMessage(this.currentTab.id, message, (response) => {
+                if (!isResolved) {
+                    isResolved = true;
                     clearTimeout(timeoutId);
                     
                     if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
+                        // تجاهل أخطاء الاتصال العادية
+                        if (chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
+                            reject(new Error('Content script not loaded'));
+                        } else {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        }
                         return;
                     }
                     
-                    resolve(response);
-                });
-            } catch (error) {
+                    resolve(response || { status: 'no_response' });
+                }
+            });
+        } catch (error) {
+            if (!isResolved) {
+                isResolved = true;
                 clearTimeout(timeoutId);
                 reject(error);
             }
-        });
-    }
-
-    async injectContentScript() {
-        try {
-            console.log('💉 حقن content script...');
-            
-            await chrome.scripting.executeScript({
-                target: { tabId: this.currentTab.id },
-                files: ['content.js']
-            });
-
-            console.log('✅ تم حقن content script');
-            await this.delay(3000); // انتظار التحميل
-
-        } catch (error) {
-            console.error('❌ فشل في حقن content script:', error);
-            throw new Error(`فشل في حقن content script: ${error.message}`);
         }
-    }
+    });
+}
 
-    handleSuccessfulConnection(response) {
-        console.log('🎉 تم تأسيس الاتصال بنجاح');
+async injectContentScript() {
+    try {
+        console.log('💉 حقن content script...');
         
-        this.isConnected = true;
-        this.connectionAttempts = 0;
+        await chrome.scripting.executeScript({
+            target: { tabId: this.currentTab.id },
+            files: ['content.js']
+        });
+
+        console.log('✅ تم حقن content script');
+        await this.delay(3000); // انتظار التحميل
+
+    } catch (error) {
+        console.error('❌ فشل في حقن content script:', error);
+        throw new Error(`فشل في حقن content script: ${error.message}`);
+    }
+}
+
+async forceReloadContentScript() {
+    try {
+        console.log('🔄 إعادة تحميل content script بالقوة...');
         
-        this.updateConnectionStatus('connected', 'متصل وجاهز');
-        this.updateConnectionDetails(`نوع الصفحة: ${response.pageType || 'غير محدد'}`);
+        // محاولة إزالة content script القديم
+        await chrome.scripting.executeScript({
+            target: { tabId: this.currentTab.id },
+            func: () => {
+                if (window.jadaratAutoContentLoaded) {
+                    window.jadaratAutoContentLoaded = false;
+                    window.jadaratAutoContent = null;
+                }
+            }
+        });
         
-        // تحديث معلومات التشخيص
-        if (this.debugPageType) this.debugPageType.textContent = response.pageType || 'غير محدد';
-        if (this.debugCurrentUrl) this.debugCurrentUrl.textContent = response.url || 'غير محدد';
+        await this.delay(1000);
+        
+        // حقن جديد
+        await chrome.scripting.executeScript({
+            target: { tabId: this.currentTab.id },
+            files: ['content.js']
+        });
+
+        console.log('✅ تم إعادة التحميل بالقوة');
+        
+    } catch (error) {
+        console.error('❌ فشل في إعادة التحميل:', error);
+        // لا نرمي خطأ هنا، فقط نسجل
+    }
+}
+
+handleSuccessfulConnection(response) {
+    console.log('🎉 تم تأسيس الاتصال بنجاح');
+    
+    this.isConnected = true;
+    this.connectionAttempts = 0;
+    
+    // التعامل مع response فارغ أو غير كامل
+    const safeResponse = response || {};
+    const pageType = safeResponse.pageType || 'غير محدد';
+    const url = safeResponse.url || this.currentTab?.url || 'غير محدد';
+    
+    this.updateConnectionStatus('connected', 'متصل وجاهز');
+    this.updateConnectionDetails(`نوع الصفحة: ${pageType}`);
+    
+    // تحديث معلومات التشخيص بأمان
+    try {
+        if (this.debugPageType) this.debugPageType.textContent = pageType;
+        if (this.debugCurrentUrl) this.debugCurrentUrl.textContent = url;
         if (this.debugLastError) this.debugLastError.textContent = 'لا توجد أخطاء';
-
-        this.enableControls();
-        this.hideLoadingOverlay();
-        this.hideErrorModal();
-        this.hideDebugSection();
-        
-        // تحميل الإعدادات والبيانات
-        this.loadSettings();
+    } catch (error) {
+        console.log('تحذير: مشكلة في تحديث معلومات التشخيص');
     }
+
+    this.enableControls();
+    this.hideLoadingOverlay();
+    this.hideErrorModal();
+    this.hideDebugSection();
+    
+    // تحميل الإعدادات والبيانات
+    setTimeout(() => {
+        this.loadSettings();
+    }, 500);
+}
 
     handleConnectionFailure(error) {
         console.error('💥 فشل في جميع محاولات الاتصال');
