@@ -138,19 +138,99 @@ if (window.jadaratAutoContentLoaded) {
 
         // 🎯 انتظار تحميل الوظائف
         async waitForJobsToLoad() {
-            this.debugLog('🔍 انتظار تحميل قائمة الوظائف...');
+            this.debugLog('🔍 انتظار تحميل قائمة الوظائف المحسن...');
             
-            return await this.waitForCondition(() => {
-                const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
-                const hasContent = document.body.textContent.length > 1000;
-                const pageReady = document.readyState === 'complete';
+            return new Promise((resolve, reject) => {
+                let attempts = 0;
+                const maxAttempts = 60; // 60 ثانية للتحميل
+                let observer;
                 
-                return jobLinks.length > 0 && hasContent && pageReady;
-            }, {
-                maxWaitTime: 25000,
-                interval: 400,
-                debugName: 'تحميل قائمة الوظائف',
-                timeoutMessage: 'فشل في تحميل قائمة الوظائف'
+                const checkJobsLoaded = () => {
+                    attempts++;
+                    
+                    const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
+                    const hasContent = document.body.textContent.length > 5000; // رفع الحد الأدنى
+                    const pageReady = document.readyState === 'complete';
+                    const hasJobContainer = document.querySelector('[data-list]') || 
+                                           document.querySelector('.list') ||
+                                           document.querySelector('[data-container]');
+                    
+                    // فحص أن المحتوى ليس فقط "JavaScript is required"
+                    const contentText = document.body.textContent;
+                    const hasRealContent = !contentText.includes('JavaScript is required') || 
+                                          contentText.length > 3000;
+                    
+                    this.debugLog(`📊 فحص التحميل - محاولة ${attempts}/${maxAttempts}:
+                        - روابط الوظائف: ${jobLinks.length}
+                        - طول المحتوى: ${document.body.textContent.length}
+                        - الصفحة جاهزة: ${pageReady}
+                        - حاوي الوظائف: ${!!hasJobContainer}
+                        - محتوى حقيقي: ${hasRealContent}`);
+                    
+                    const isLoaded = jobLinks.length > 0 && 
+                                    hasContent && 
+                                    pageReady && 
+                                    hasJobContainer && 
+                                    hasRealContent;
+                    
+                    if (isLoaded) {
+                        this.debugLog(`✅ تحميل قائمة الوظائف: تم بنجاح في ${attempts}ث - وجد ${jobLinks.length} وظيفة`);
+                        
+                        if (observer) observer.disconnect();
+                        
+                        // انتظار إضافي للاستقرار
+                        setTimeout(() => {
+                            resolve(true);
+                        }, 2000);
+                        return;
+                    }
+                    
+                    if (attempts >= maxAttempts) {
+                        this.debugLog(`❌ انتهت محاولات تحميل قائمة الوظائف بعد ${maxAttempts}ث`);
+                        if (observer) observer.disconnect();
+                        reject(new Error('فشل في تحميل قائمة الوظائف'));
+                        return;
+                    }
+                    
+                    // لوج التقدم كل 15 محاولة
+                    if (attempts % 15 === 0) {
+                        this.debugLog(`⏳ انتظار الوظائف: ${attempts}/${maxAttempts} - وجد ${jobLinks.length} وظيفة`);
+                    }
+                    
+                    // مواصلة المراقبة
+                    setTimeout(checkJobsLoaded, 1000);
+                };
+                
+                // مراقبة تغييرات DOM للاستجابة السريعة
+                observer = new MutationObserver((mutations) => {
+                    let hasSignificantChange = false;
+                    for (const mutation of mutations) {
+                        if (mutation.addedNodes.length > 0) {
+                            for (const node of mutation.addedNodes) {
+                                if (node.nodeType === 1 && // Element node
+                                    (node.tagName === 'A' || 
+                                     node.querySelector && node.querySelector('a[href*="JobDetails"]'))) {
+                                    hasSignificantChange = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasSignificantChange) break;
+                    }
+                    
+                    if (hasSignificantChange) {
+                        setTimeout(checkJobsLoaded, 500);
+                    }
+                });
+                
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: false
+                });
+                
+                // بدء المراقبة
+                setTimeout(checkJobsLoaded, 1000);
             });
         }
 
@@ -1782,29 +1862,79 @@ findElementsByText(selector) {
                 }
             }
             
-            // انتظار تحميل كامل لقائمة الوظائف
-            this.debugLog('⏳ انتظار تحميل قائمة الوظائف...');
-            await this.waitForJobsToLoad();
+            // انتظار تحميل كامل لقائمة الوظائف مع إعادة محاولة
+            this.debugLog('⏳ انتظار تحميل قائمة الوظائف مع مراقبة مكثفة...');
             
-            // التأكد من نوع الصفحة
-            await this.wait(2000);
+            let loadAttempts = 0;
+            const maxLoadAttempts = 3;
+            let jobsLoaded = false;
+            
+            while (loadAttempts < maxLoadAttempts && !jobsLoaded) {
+                try {
+                    loadAttempts++;
+                    this.debugLog(`📊 محاولة تحميل ${loadAttempts}/${maxLoadAttempts}`);
+                    
+                    await this.waitForJobsToLoad();
+                    jobsLoaded = true;
+                    
+                } catch (error) {
+                    this.debugLog(`❌ فشلت محاولة التحميل ${loadAttempts}: ${error.message}`);
+                    
+                    if (loadAttempts < maxLoadAttempts) {
+                        this.debugLog('🔄 إعادة تحميل الصفحة...');
+                        window.location.reload();
+                        await this.wait(8000);
+                    }
+                }
+            }
+            
+            if (!jobsLoaded) {
+                this.debugLog('❌ فشل في تحميل قائمة الوظائف نهائياً');
+                return false;
+            }
+            
+            // التأكد من نوع الصفحة وعدد الوظائف
+            await this.wait(3000);
             this.checkPageType();
             
-            if (this.pageType === 'jobList') {
+            const jobCount = document.querySelectorAll('a[href*="JobDetails"]').length;
+            this.debugLog(`📊 فحص نهائي: نوع الصفحة = ${this.pageType}, عدد الوظائف = ${jobCount}`);
+            
+            if (this.pageType === 'jobList' && jobCount > 0) {
                 this.debugLog('✅ تم العودة بنجاح لقائمة الوظائف');
                 window.scrollTo(0, 0);
+                
+                // تحديث بيانات الصفحة
+                this.analyzeJobListPage();
+                
                 return true;
             } else {
-                this.debugLog('❌ لم نعد لقائمة الوظائف، الحالة الحالية:', this.pageType);
+                this.debugLog('❌ مشكلة في العودة - المعلومات:');
+                this.debugLog(`   - نوع الصفحة: ${this.pageType}`);
+                this.debugLog(`   - عدد الوظائف: ${jobCount}`);
+                this.debugLog(`   - URL: ${window.location.href}`);
+                this.debugLog(`   - طول المحتوى: ${document.body.textContent.length}`);
                 
-                // محاولة أخيرة - إجبار التنقل
-                this.debugLog('🔄 محاولة أخيرة - إجبار التنقل...');
+                // محاولة أخيرة - إجبار التنقل مع انتظار أطول
+                this.debugLog('🔄 محاولة أخيرة - إجبار التنقل مع انتظار مكثف...');
                 window.location.href = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
-                await this.wait(5000);
-                await this.waitForJobsToLoad();
-                this.checkPageType();
+                await this.wait(10000);
                 
-                return this.pageType === 'jobList';
+                try {
+                    await this.waitForJobsToLoad();
+                    this.checkPageType();
+                    const finalJobCount = document.querySelectorAll('a[href*="JobDetails"]').length;
+                    
+                    if (this.pageType === 'jobList' && finalJobCount > 0) {
+                        this.debugLog('✅ نجحت المحاولة الأخيرة');
+                        this.analyzeJobListPage();
+                        return true;
+                    }
+                } catch (error) {
+                    this.debugLog('❌ فشلت المحاولة الأخيرة:', error.message);
+                }
+                
+                return false;
             }
         }
 
@@ -1929,20 +2059,42 @@ findElementsByText(selector) {
             if (!this.isRunning || this.isPaused) return;
 
             try {
-                this.debugLog('🔄 معالجة الصفحة الحالية');
+                this.debugLog('🔄 معالجة الصفحة الحالية مع فحص شامل');
                 
+                // التأكد من أننا في المكان الصحيح
+                if (!window.location.href.includes('ExploreJobs') && !window.location.href.includes('JobTab=1')) {
+                    this.debugLog('⚠️ لسنا في قائمة الوظائف، التنقل...');
+                    window.location.href = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
+                    await this.wait(8000);
+                }
+                
+                // انتظار التحميل مع مراقبة مكثفة
                 await this.waitForJobsToLoad();
                 
-                const jobCards = await this.getJobCardsImproved();
+                // فحص إضافي للوظائف
+                let jobCards = await this.getJobCardsImproved();
                 this.totalJobs = jobCards.length;
 
                 this.debugLog(`💼 تم العثور على ${this.totalJobs} وظيفة`);
 
+                // إذا لم نجد وظائف، جرب إعادة التحميل
                 if (this.totalJobs === 0) {
-                    this.sendMessage('AUTOMATION_ERROR', { 
-                        error: 'لم يتم العثور على وظائف في هذه الصفحة' 
-                    });
-                    return;
+                    this.debugLog('⚠️ لم توجد وظائف، إعادة تحميل وفحص...');
+                    window.location.reload();
+                    await this.wait(10000);
+                    await this.waitForJobsToLoad();
+                    
+                    jobCards = await this.getJobCardsImproved();
+                    this.totalJobs = jobCards.length;
+                    
+                    this.debugLog(`💼 بعد إعادة التحميل: ${this.totalJobs} وظيفة`);
+                    
+                    if (this.totalJobs === 0) {
+                        this.sendMessage('AUTOMATION_ERROR', { 
+                            error: 'لم يتم العثور على وظائف في هذه الصفحة حتى بعد إعادة التحميل' 
+                        });
+                        return;
+                    }
                 }
 
                 this.sendMessage('UPDATE_PROGRESS', { 
