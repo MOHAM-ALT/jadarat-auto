@@ -100,11 +100,73 @@ async saveRejectedJobs() {
 
 getJobUniqueId(jobLink) {
     try {
+        // إذا كان jobCard محسن، استخدم المعرف المحسن
+        if (jobLink.parentElement && jobLink.parentElement._enhancedId) {
+            return jobLink.parentElement._enhancedId;
+        }
+        
         const url = jobLink.href;
-        const match = url.match(/Param=([^&]+)/);
-        return match ? match[1] : null;
+        
+        // طريقة 1: من parameter Param (الطريقة الأصلية)
+        let match = url.match(/Param=([^&]+)/);
+        if (match) return match[1];
+        
+        // طريقة 2: من أي معرف طويل في URL
+        match = url.match(/([a-zA-Z0-9]{15,})/);
+        if (match) return match[1];
+        
+        // طريقة 3: من JobDetails parameters
+        match = url.match(/JobDetails.*?([A-Za-z0-9]{10,})/);
+        if (match) return match[1];
+        
+        return null;
     } catch (error) {
         return null;
+    }
+}
+// دالة تحسين jobCard لاستخراج المعرف الصحيح
+enhanceJobCardId(jobCard) {
+    try {
+        const currentUrl = window.location.href;
+        
+        // استخراج المعرف من URL الحالي
+        let jobParam = null;
+        
+        // طريقة 1: من parameter Param
+        const paramMatch = currentUrl.match(/Param=([^&]+)/);
+        if (paramMatch) {
+            jobParam = paramMatch[1];
+        }
+        
+        // طريقة 2: من JobDetails ID
+        if (!jobParam) {
+            const jobIdMatch = currentUrl.match(/JobDetails[?&].*?([a-zA-Z0-9]{20,})/);
+            if (jobIdMatch) {
+                jobParam = jobIdMatch[1];
+            }
+        }
+        
+        // طريقة 3: من عنوان الوظيفة كبديل
+        if (!jobParam && jobCard.title) {
+            // استخراج الرقم التعريفي من الصفحة
+            const pageText = document.body.textContent || '';
+            const idMatch = pageText.match(/الرقم التعريفي[:\s]*(\d+)/);
+            if (idMatch) {
+                jobParam = idMatch[1];
+            } else {
+                // استخدام عنوان الوظيفة كمعرف احتياطي
+                jobParam = `title_${btoa(jobCard.title).substring(0, 20)}`;
+            }
+        }
+        
+        // حفظ المعرف في jobCard
+        if (jobParam) {
+            jobCard._enhancedId = jobParam;
+            this.debugLog(`🔍 تم استخراج معرف محسن: ${jobParam.substring(0, 20)}...`);
+        }
+        
+    } catch (error) {
+        this.debugLog(`❌ خطأ في تحسين jobCard:`, error);
     }
 }
 
@@ -112,19 +174,33 @@ addJobToRejected(jobCard) {
     const jobLink = jobCard.link;
     let jobParam = null;
     
-    // جرب طرق مختلفة لاستخراج المعرف
-    if (jobLink && jobLink.href) {
+    // أولوية 1: المعرف المحسن (للوظائف الحالية)
+    if (jobCard._enhancedId) {
+        jobParam = jobCard._enhancedId;
+        this.debugLog(`🎯 استخدام المعرف المحسن: ${jobParam.substring(0, 20)}...`);
+    }
+    // أولوية 2: استخراج من الرابط
+    else if (jobLink && jobLink.href) {
         jobParam = this.getJobUniqueId(jobLink);
-    } else if (typeof jobLink === 'string') {
+    } 
+    // أولوية 3: من النص المباشر
+    else if (typeof jobLink === 'string') {
         const match = jobLink.match(/Param=([^&]+)/);
         jobParam = match ? match[1] : null;
     }
     
-    // إذا فشل، استخدم العنوان كبديل
+    // أولوية 4: من عنوان الوظيفة + timestamp لضمان التفرد
     if (!jobParam && jobCard.title) {
-        jobParam = `title_${btoa(jobCard.title).substring(0, 20)}`;
+        const titleHash = btoa(jobCard.title).substring(0, 15);
+        const timeStamp = Date.now().toString().slice(-5);
+        jobParam = `title_${titleHash}_${timeStamp}`;
     }
     
+    // أولوية 5: معرف طوارئ
+    if (!jobParam) {
+        jobParam = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
     if (jobParam) {
         this.rejectedJobs.add(jobParam);
         this.saveRejectedJobs();
@@ -137,11 +213,40 @@ addJobToRejected(jobCard) {
 
 isJobRejected(jobCard) {
     const jobLink = jobCard.link;
-    const jobParam = this.getJobUniqueId(jobLink);
+    
+    // فحص متعدد المستويات
+    let jobParam = null;
+    
+    // مستوى 1: المعرف المحسن
+    if (jobCard._enhancedId) {
+        jobParam = jobCard._enhancedId;
+    }
+    // مستوى 2: الاستخراج العادي
+    else {
+        jobParam = this.getJobUniqueId(jobLink);
+    }
     
     if (jobParam && this.rejectedJobs.has(jobParam)) {
-        this.debugLog(`🧠 وظيفة مرفوضة سابقاً: ${jobCard.title}`);
+        this.debugLog(`🧠 وظيفة مرفوضة سابقاً: ${jobCard.title} (${jobParam.substring(0, 15)}...)`);
         return true;
+    }
+    
+    // مستوى 3: فحص بديل بناءً على العنوان
+    if (jobCard.title) {
+        const titlePatterns = [
+            `title_${btoa(jobCard.title).substring(0, 15)}`,
+            `title_${btoa(jobCard.title).substring(0, 20)}`
+        ];
+        
+        for (const pattern of titlePatterns) {
+            // البحث عن أي معرف يبدأ بهذا النمط
+            for (const rejectedId of this.rejectedJobs) {
+                if (rejectedId.startsWith(pattern)) {
+                    this.debugLog(`🧠 وظيفة مرفوضة سابقاً (بالعنوان): ${jobCard.title}`);
+                    return true;
+                }
+            }
+        }
     }
     
     return false;
@@ -1541,14 +1646,24 @@ case 'GET_REJECTED_COUNT':
                     this.debugLog('📊 نتيجة التقديم:', applicationResult);
 
  if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
-    // إنشاء jobCard مؤقت للوظيفة الحالية
+    // إنشاء jobCard مؤقت للوظيفة الحالية مع معرف صحيح
     const currentJobCard = {
         title: jobTitle,
-        link: { href: window.location.href }
+        link: { 
+            href: window.location.href,
+            // استخراج المعرف من URL الحالي
+            getAttribute: function() { return null; },
+            querySelector: function() { return null; }
+        }
     };
+    
+    // تحسين استخراج المعرف من URL الحالي
+    this.enhanceJobCardId(currentJobCard);
+    
     this.handleApplicationResult(applicationResult, jobTitle, currentJobCard);
     this.debugLog('✅ تم التعامل مع نتيجة التقديم');
 } else {
+
     this.debugLog('⚠️ لم يتم التقديم بشكل صحيح، تسجيل كتخطي');
     this.stats.skipped++;
     this.sendMessage('UPDATE_CURRENT_JOB', { 
