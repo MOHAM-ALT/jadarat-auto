@@ -110,12 +110,28 @@ getJobUniqueId(jobLink) {
 
 addJobToRejected(jobCard) {
     const jobLink = jobCard.link;
-    const jobParam = this.getJobUniqueId(jobLink);
+    let jobParam = null;
+    
+    // جرب طرق مختلفة لاستخراج المعرف
+    if (jobLink && jobLink.href) {
+        jobParam = this.getJobUniqueId(jobLink);
+    } else if (typeof jobLink === 'string') {
+        const match = jobLink.match(/Param=([^&]+)/);
+        jobParam = match ? match[1] : null;
+    }
+    
+    // إذا فشل، استخدم العنوان كبديل
+    if (!jobParam && jobCard.title) {
+        jobParam = `title_${btoa(jobCard.title).substring(0, 20)}`;
+    }
     
     if (jobParam) {
         this.rejectedJobs.add(jobParam);
         this.saveRejectedJobs();
         this.debugLog(`🚫 تم إضافة وظيفة للمرفوضة: ${jobCard.title} (${jobParam.substring(0, 20)}...)`);
+        this.debugLog(`📊 إجمالي الوظائف المرفوضة: ${this.rejectedJobs.size}`);
+    } else {
+        this.debugLog(`❌ فشل في استخراج معرف الوظيفة: ${jobCard.title}`);
     }
 }
 
@@ -1531,17 +1547,16 @@ case 'GET_REJECTED_COUNT':
         link: { href: window.location.href }
     };
     this.handleApplicationResult(applicationResult, jobTitle, currentJobCard);
-
-                        this.debugLog('✅ تم التعامل مع نتيجة التقديم');
-                    } else {
-                        this.debugLog('⚠️ لم يتم التقديم بشكل صحيح، تسجيل كتخطي');
-                        this.stats.skipped++;
-                        this.sendMessage('UPDATE_CURRENT_JOB', { 
-                            jobTitle: jobTitle, 
-                            status: 'skipped',
-                            reason: 'فشل في التقديم'
-                        });
-                    }
+    this.debugLog('✅ تم التعامل مع نتيجة التقديم');
+} else {
+    this.debugLog('⚠️ لم يتم التقديم بشكل صحيح، تسجيل كتخطي');
+    this.stats.skipped++;
+    this.sendMessage('UPDATE_CURRENT_JOB', { 
+        jobTitle: jobTitle, 
+        status: 'skipped',
+        reason: 'فشل في التقديم'
+    });
+}
                 }
 
                 this.stats.total++;
