@@ -1521,6 +1521,25 @@ getAllPossibleSubmitButtons() {
             this.debugLog('❌ لم يوجد أي عنصر قابل للنقر');
             return { success: false, reason: 'لم يوجد أي عنصر قابل للنقر' };
         }
+findElementsByText(selector) {
+            // دالة مساعدة للبحث بـ :contains() بدون CSS
+            const parts = selector.match(/^(\w+):contains\("([^"]+)"\)$/);
+            if (!parts) return [];
+            
+            const tagName = parts[1].toUpperCase();
+            const searchText = parts[2];
+            
+            const elements = document.querySelectorAll(tagName);
+            const results = [];
+            
+            for (const element of elements) {
+                if (element.textContent && element.textContent.includes(searchText)) {
+                    results.push(element);
+                }
+            }
+            
+            return results;
+        }
 
         handleApplicationResult(result, jobTitle) {
             if (result.success) {
@@ -1674,44 +1693,118 @@ getAllPossibleSubmitButtons() {
         }
 
         async goBackToJobList() {
-            this.debugLog('🔙 العودة لقائمة الوظائف');
+            this.debugLog('🔙 العودة لقائمة الوظائف بطرق متعددة...');
             
-            const backButton = document.querySelector('button[aria-label*="back"], .back-button, [class*="back"]');
-            if (backButton && backButton.offsetWidth > 0) {
-                await this.clickElementAdaptive(backButton);
-            } else {
+            const currentUrl = window.location.href;
+            this.debugLog(`📍 URL الحالي: ${currentUrl}`);
+            
+            // الطريقة 1: التنقل المباشر (الأسرع والأوثق)
+            this.debugLog('🚀 الطريقة 1: التنقل المباشر لقائمة الوظائف');
+            try {
+                const jobListUrl = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
+                this.debugLog(`🔗 الانتقال إلى: ${jobListUrl}`);
+                
+                window.location.href = jobListUrl;
+                
+                // انتظار التنقل
+                await this.waitForCondition(() => {
+                    const urlChanged = window.location.href !== currentUrl;
+                    const isJobListUrl = window.location.href.includes('ExploreJobs') || 
+                                        window.location.href.includes('JobTab=1');
+                    return urlChanged && isJobListUrl;
+                }, {
+                    maxWaitTime: 10000,
+                    interval: 500,
+                    debugName: 'التنقل المباشر للقائمة',
+                    timeoutMessage: 'فشل في التنقل المباشر'
+                });
+                
+                this.debugLog('✅ نجح التنقل المباشر');
+                
+            } catch (error) {
+                this.debugLog('❌ فشل التنقل المباشر، جرب الطريقة 2...');
+                
+                // الطريقة 2: history.back()
+                this.debugLog('🔄 الطريقة 2: استخدام history.back()');
                 window.history.back();
+                
+                await this.wait(3000);
+                
+                // فحص النجاح
+                if (!window.location.href.includes('JobDetails')) {
+                    this.debugLog('✅ نجح history.back()');
+                } else {
+                    this.debugLog('❌ فشل history.back(), جرب الطريقة 3...');
+                    
+                    // الطريقة 3: البحث عن رابط العودة
+                    this.debugLog('🔍 الطريقة 3: البحث عن رابط العودة');
+                    const backLinks = [
+                        'a[href*="ExploreJobs"]',
+                        'a[href*="JobTab=1"]',
+                        'a:contains("استعراض الوظائف")',
+                        'a:contains("العودة")',
+                        'a:contains("قائمة الوظائف")',
+                        'button[aria-label*="back"]',
+                        '.back-button'
+                    ];
+                    
+                    let backSuccess = false;
+                    for (const selector of backLinks) {
+                        try {
+                            const elements = selector.includes('contains') ? 
+                                this.findElementsByText(selector) : 
+                                document.querySelectorAll(selector);
+                            
+                            for (const element of elements) {
+                                if (element.offsetWidth > 0 && element.offsetHeight > 0) {
+                                    this.debugLog(`🎯 جرب النقر على: ${selector}`);
+                                    await this.clickElementAdaptive(element);
+                                    await this.wait(3000);
+                                    
+                                    if (!window.location.href.includes('JobDetails')) {
+                                        this.debugLog('✅ نجح النقر على عنصر العودة');
+                                        backSuccess = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (backSuccess) break;
+                        } catch (err) {
+                            continue;
+                        }
+                    }
+                    
+                    if (!backSuccess) {
+                        this.debugLog('⚠️ فشلت جميع طرق العودة، إعادة تحميل الصفحة...');
+                        window.location.reload();
+                        await this.wait(5000);
+                    }
+                }
             }
             
-            await this.waitForNavigationAdaptive();
-            await this.wait(5000);
+            // انتظار تحميل كامل لقائمة الوظائف
+            this.debugLog('⏳ انتظار تحميل قائمة الوظائف...');
+            await this.waitForJobsToLoad();
             
+            // التأكد من نوع الصفحة
+            await this.wait(2000);
             this.checkPageType();
             
             if (this.pageType === 'jobList') {
-                this.debugLog('✅ تم العودة بنجاح');
+                this.debugLog('✅ تم العودة بنجاح لقائمة الوظائف');
                 window.scrollTo(0, 0);
-                
-                if (this.isRunning && !this.isPaused) {
-                    this.debugLog('🔄 استكمال معالجة باقي الوظائف في نفس الصفحة...');
-                    await this.wait(3000);
-                    await this.continueProcessingCurrentPage();
-                }
+                return true;
             } else {
-                this.debugLog('⚠️ قد تكون العودة لم تنجح، محاولة التنقل المباشر');
-                const exploreJobsLink = document.querySelector('a[href*="ExploreJobs"], a[href*="JobTab=1"]');
-                if (exploreJobsLink) {
-                    await this.clickElementAdaptive(exploreJobsLink);
-                    await this.waitForNavigationAdaptive();
-                    await this.wait(3000);
-                    this.checkPageType();
-                    
-                    if (this.pageType === 'jobList' && this.isRunning && !this.isPaused) {
-                        this.debugLog('🔄 استكمال معالجة بعد التنقل المباشر...');
-                        await this.wait(2000);
-                        await this.continueProcessingCurrentPage();
-                    }
-                }
+                this.debugLog('❌ لم نعد لقائمة الوظائف، الحالة الحالية:', this.pageType);
+                
+                // محاولة أخيرة - إجبار التنقل
+                this.debugLog('🔄 محاولة أخيرة - إجبار التنقل...');
+                window.location.href = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
+                await this.wait(5000);
+                await this.waitForJobsToLoad();
+                this.checkPageType();
+                
+                return this.pageType === 'jobList';
             }
         }
 
@@ -1719,7 +1812,20 @@ getAllPossibleSubmitButtons() {
             try {
                 this.debugLog('🔄 استكمال معالجة الصفحة الحالية...');
                 
-                await this.waitForPageLoad();
+                // التأكد من أننا في قائمة الوظائف
+                if (this.pageType !== 'jobList') {
+                    this.debugLog('⚠️ لسنا في قائمة الوظائف، محاولة العودة...');
+                    const backSuccess = await this.goBackToJobList();
+                    if (!backSuccess) {
+                        this.debugLog('❌ فشل في العودة لقائمة الوظائف');
+                        this.sendMessage('AUTOMATION_ERROR', { 
+                            error: 'فشل في العودة لقائمة الوظائف' 
+                        });
+                        return;
+                    }
+                }
+                
+                await this.waitForJobsToLoad();
                 
                 const jobCards = await this.getJobCardsImproved();
                 this.debugLog(`📋 وجد ${jobCards.length} وظيفة في الصفحة`);
