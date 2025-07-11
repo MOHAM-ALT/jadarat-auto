@@ -60,6 +60,7 @@ class JadaratAutoPopup {
         // بيانات الرفض
         this.exportBtn = document.getElementById('exportBtn');
         this.clearRejectionBtn = document.getElementById('clearRejectionBtn');
+        this.clearRejectedJobsBtn = document.getElementById('clearRejectedJobsBtn');
         this.rejectionInfo = document.getElementById('rejectionInfo');
 
         // التشخيص
@@ -103,6 +104,7 @@ class JadaratAutoPopup {
         // بيانات الرفض
         this.exportBtn?.addEventListener('click', () => this.exportRejectionData());
         this.clearRejectionBtn?.addEventListener('click', () => this.clearRejectionData());
+        this.clearRejectedJobsBtn?.addEventListener('click', () => this.clearRejectedJobs());
 
         // التشخيص
         this.debugReconnectBtn?.addEventListener('click', () => this.reconnectToContentScript());
@@ -320,6 +322,8 @@ class JadaratAutoPopup {
         if (this.restartBtn) this.restartBtn.disabled = false;
         if (this.exportBtn) this.exportBtn.disabled = false;
         if (this.clearRejectionBtn) this.clearRejectionBtn.disabled = false;
+        if (this.clearRejectedJobsBtn) this.clearRejectedJobsBtn.disabled = false;
+
     }
 
     disableAllControls() {
@@ -330,6 +334,8 @@ class JadaratAutoPopup {
         if (this.restartBtn) this.restartBtn.disabled = true;
         if (this.exportBtn) this.exportBtn.disabled = true;
         if (this.clearRejectionBtn) this.clearRejectionBtn.disabled = true;
+        if (this.clearRejectedJobsBtn) this.clearRejectedJobsBtn.disabled = true;
+
     }
 
     showDebugSection(error, url) {
@@ -640,7 +646,26 @@ class JadaratAutoPopup {
         if (this.rejectedCount) this.rejectedCount.textContent = this.stats.rejected || 0;
         if (this.totalCount) this.totalCount.textContent = this.stats.total || 0;
     }
+async clearRejectionData() {
+    if (confirm('هل أنت متأكد من مسح جميع بيانات الرفض؟')) {
+        try {
+            await chrome.runtime.sendMessage({
+                action: 'CLEAR_REJECTION_DATA'
+            });
 
+            if (this.rejectionInfo) {
+                this.rejectionInfo.innerHTML = `
+                    <span class="info-text">لا توجد بيانات رفض بعد</span>
+                `;
+            }
+
+            this.showNotification('تم مسح بيانات الرفض');
+        } catch (error) {
+            console.error('Error clearing rejection data:', error);
+            this.showError('خطأ في مسح البيانات');
+        }
+    }
+}
     setProgress(percentage, text) {
         if (this.progressFill) {
             this.progressFill.style.width = percentage + '%';
@@ -921,6 +946,7 @@ function checkExtensionHealth() {
     
     console.log('🏥 فحص صحة الإضافة:', health);
     return health;
+    
 }
 
 // إتاحة دالة الفحص عالمياً للتشخيص
