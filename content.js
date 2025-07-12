@@ -106,90 +106,184 @@ async saveVisitedJobs() {
 }
 
 // 🆕 تسجيل وظيفة كمزارة فور الدخول عليها
+// 📝 تسجيل محسن للوظائف المزارة مع بيانات تفصيلية
 markJobAsVisited(jobCard) {
-    const jobIds = this.generateJobIdentifiers(jobCard);
-    
-    this.debugLog(`📝 تسجيل وظيفة كمزارة: ${jobCard.title}`);
-    
-    // إضافة جميع المعرفات الممكنة
-    for (const id of jobIds) {
-        this.visitedJobs.add(id);
+    try {
+        const jobIds = this.generateJobIdentifiers(jobCard);
+        const jobData = this.extractJobDataFromHTML(jobCard);
+        
+        this.debugLog(`📝 تسجيل وظيفة كمزارة:`);
+        this.debugLog(`   📋 العنوان: ${jobData.title}`);
+        this.debugLog(`   🏢 الشركة: ${jobData.company}`);
+        this.debugLog(`   🏙️ المدينة: ${jobData.city || 'غير محدد'}`);
+        this.debugLog(`   📊 نسبة التوافق: ${jobData.matchingScore || 'غير محدد'}`);
+        this.debugLog(`   📅 تاريخ النشر: ${jobData.publishDate || 'غير محدد'}`);
+        
+        // حفظ جميع المعرفات
+        let savedCount = 0;
+        for (const id of jobIds) {
+            if (!this.visitedJobs.has(id)) {
+                this.visitedJobs.add(id);
+                savedCount++;
+            }
+        }
+        
+        this.debugLog(`🔑 تم حفظ ${savedCount} معرف جديد من أصل ${jobIds.length}`);
+        this.debugLog(`📊 إجمالي الوظائف المزارة: ${this.visitedJobs.size}`);
+        
+        // عرض المعرفات المحفوظة للتأكد
+        this.debugLog(`🔐 المعرفات المحفوظة:`);
+        for (let i = 0; i < Math.min(jobIds.length, 3); i++) {
+            const id = jobIds[i];
+            const type = i === 0 ? 'أساسي' : i === 1 ? 'ثانوي' : 'احتياطي';
+            this.debugLog(`   ${i + 1}. ${type}: ${id.substring(0, 50)}...`);
+        }
+        
+        // حفظ فوري في التخزين
+        this.saveVisitedJobs();
+        
+        // التأكد من الحفظ
+        setTimeout(() => {
+            if (this.isJobVisited(jobCard)) {
+                this.debugLog(`✅ تأكيد: تم حفظ الوظيفة بنجاح في الذاكرة`);
+            } else {
+                this.debugLog(`❌ تحذير: فشل في حفظ الوظيفة في الذاكرة!`);
+            }
+        }, 1000);
+        
+    } catch (error) {
+        this.debugLog('❌ خطأ في تسجيل الوظيفة كمزارة:', error);
+        
+        // حفظ طوارئ بمعرف بسيط
+        const emergencyId = `emergency_${jobCard.title}_${Date.now()}`;
+        this.visitedJobs.add(emergencyId);
+        this.saveVisitedJobs();
+        this.debugLog(`🚨 تم حفظ معرف طوارئ: ${emergencyId}`);
     }
-    
-    this.debugLog(`🔑 تم حفظ ${jobIds.length} معرف مختلف للوظيفة`);
-    this.debugLog(`📊 إجمالي الوظائف المزارة: ${this.visitedJobs.size}`);
-    
-    // حفظ فوري في التخزين
-    this.saveVisitedJobs();
 }
 
 // 🆕 فحص إذا كانت الوظيفة مزارة سابقاً
+// 🔍 فحص محسن للوظائف المزارة مع تفاصيل أكثر
 isJobVisited(jobCard) {
-    const jobIds = this.generateJobIdentifiers(jobCard);
-    
-    this.debugLog(`🔍 فحص زيارة الوظيفة: ${jobCard.title}`);
-    
-    // فحص كل معرف ممكن
-    for (const id of jobIds) {
-        if (this.visitedJobs.has(id)) {
-            this.debugLog(`🚫 وظيفة مزارة سابقاً: ${jobCard.title} - ${id.substring(0, 20)}...`);
-            return true;
+    try {
+        const jobIds = this.generateJobIdentifiers(jobCard);
+        const jobData = this.extractJobDataFromHTML(jobCard);
+        
+        this.debugLog(`🔍 فحص زيارة الوظيفة: ${jobData.title} | ${jobData.company} | ${jobData.city}`);
+        
+        // فحص كل معرف مع إظهار أيهم تطابق
+        for (let i = 0; i < jobIds.length; i++) {
+            const id = jobIds[i];
+            if (this.visitedJobs.has(id)) {
+                this.debugLog(`🚫 وظيفة مزارة سابقاً!`);
+                this.debugLog(`   📝 العنوان: ${jobData.title}`);
+                this.debugLog(`   🏢 الشركة: ${jobData.company}`);
+                this.debugLog(`   🏙️ المدينة: ${jobData.city}`);
+                this.debugLog(`   🔑 المعرف المطابق: ${id.substring(0, 40)}...`);
+                this.debugLog(`   📊 المرتبة: ${i + 1}/${jobIds.length} (${i === 0 ? 'أساسي' : i === 1 ? 'ثانوي' : 'احتياطي'})`);
+                return true;
+            }
         }
+        
+        this.debugLog(`✅ وظيفة جديدة غير مزارة: ${jobData.title} | ${jobData.company}`);
+        this.debugLog(`🔑 سيتم إنشاء ${jobIds.length} معرف جديد لحفظها`);
+        return false;
+        
+    } catch (error) {
+        this.debugLog('❌ خطأ في فحص زيارة الوظيفة:', error);
+        // في حالة الخطأ، نعتبرها غير مزارة لتجنب تفويت وظائف
+        return false;
     }
-    
-    this.debugLog(`✅ وظيفة جديدة غير مزارة: ${jobCard.title}`);
-    return false;
 }
 
 // 🆕 توليد معرفات شاملة للوظيفة (أقوى من النظام السابق)
+// 🆕 توليد معرفات موثوقة مبنية على البيانات الحقيقية
 generateJobIdentifiers(jobCard) {
     const identifiers = [];
     
     try {
-        // 1. معرف URL الأساسي (الأقوى)
-        const urlId = this.getJobUniqueId(jobCard.link);
-        if (urlId) {
-            identifiers.push(urlId);
-            identifiers.push(`url_${urlId}`);
-        }
+        // استخراج البيانات الشاملة أولاً
+        const jobData = this.extractJobDataFromHTML(jobCard);
         
-        // 2. معرف عنوان الوظيفة
-        const jobTitle = jobCard.title || '';
-        if (jobTitle) {
-            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            identifiers.push(`title_${cleanTitle}`);
-            identifiers.push(jobTitle.toLowerCase());
+        this.debugLog(`🔑 توليد معرفات للوظيفة:`, {
+            title: jobData.title,
+            company: jobData.company,
+            city: jobData.city,
+            matching: jobData.matchingScore
+        });
+
+        // تنظيف النصوص للاستخدام في المعرفات
+        const cleanTitle = this.cleanTextForId(jobData.title);
+        const cleanCompany = this.cleanTextForId(jobData.company);
+        const cleanCity = this.cleanTextForId(jobData.city);
+
+        // المعرف الأساسي: شركة + وظيفة + مدينة (الأقوى والأوثق)
+        if (cleanCompany && cleanTitle && cleanCity) {
+            const primaryId = `${cleanCompany}_${cleanTitle}_${cleanCity}`;
+            identifiers.push(primaryId);
+            this.debugLog(`🔑 معرف أساسي: ${primaryId}`);
+        }
+
+        // المعرف الثانوي: شركة + وظيفة (بدون مدينة)
+        if (cleanCompany && cleanTitle) {
+            const secondaryId = `${cleanCompany}_${cleanTitle}`;
+            identifiers.push(secondaryId);
+            this.debugLog(`🔑 معرف ثانوي: ${secondaryId}`);
+        }
+
+        // المعرف الاحتياطي: عنوان الوظيفة + نسبة التوافق
+        if (cleanTitle && jobData.matchingScore) {
+            const cleanScore = jobData.matchingScore.replace(/[^\d]/g, '');
+            const backupId = `title_${cleanTitle}_score_${cleanScore}`;
+            identifiers.push(backupId);
+            this.debugLog(`🔑 معرف احتياطي: ${backupId}`);
+        }
+
+        // معرف بتاريخ النشر (فريد جداً)
+        if (cleanCompany && cleanTitle && jobData.publishDate) {
+            const cleanDate = jobData.publishDate.replace(/[^\d]/g, '');
+            const dateId = `${cleanCompany}_${cleanTitle}_date_${cleanDate}`;
+            identifiers.push(dateId);
+            this.debugLog(`🔑 معرف بالتاريخ: ${dateId}`);
+        }
+
+        // معرف عنوان الوظيفة فقط (طوارئ)
+        if (cleanTitle) {
+            identifiers.push(`title_only_${cleanTitle}`);
             identifiers.push(cleanTitle);
         }
-        
-        // 3. معرف الشركة + الوظيفة
-        const companyName = this.extractCompanyName(jobCard);
-        if (companyName && jobTitle) {
-            const cleanCompany = companyName.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            identifiers.push(`job_${cleanTitle}_company_${cleanCompany}`);
-            identifiers.push(`${jobTitle}_${companyName}`.replace(/\s+/g, '_').toLowerCase());
+
+        // معرف الشركة فقط (للشركات الصغيرة)
+        if (cleanCompany && cleanCompany !== 'unknown_company') {
+            identifiers.push(`company_only_${cleanCompany}`);
         }
-        
-        // 4. معرف هاش الرابط
-        if (jobCard.link && jobCard.link.href) {
-            const linkHash = btoa(jobCard.link.href).replace(/[^A-Za-z0-9]/g, '').substring(0, 32);
-            identifiers.push(`link_${linkHash}`);
-        }
-        
-        // 5. معرف احتياطي
+
+        // في حالة عدم وجود معرفات، إنشاء معرف طوارئ
         if (identifiers.length === 0) {
             const emergencyId = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             identifiers.push(emergencyId);
-            this.debugLog(`🚨 استخدام معرف طوارئ: ${emergencyId}`);
+            this.debugLog(`🚨 معرف طوارئ: ${emergencyId}`);
         }
+
+        this.debugLog(`📊 تم إنشاء ${identifiers.length} معرف مختلف للوظيفة`);
+        return identifiers;
         
     } catch (error) {
-        this.debugLog('❌ خطأ في توليد المعرفات:', error);
-        identifiers.push(`error_${Date.now()}`);
+        this.debugLog('❌ خطأ في توليد المعرفات الجديدة:', error);
+        return [`error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`];
     }
+}
+
+// دالة مساعدة لتنظيف النصوص
+cleanTextForId(text) {
+    if (!text || typeof text !== 'string') return '';
     
-    return identifiers;
+    return text
+        .trim()
+        .replace(/[^\w\u0600-\u06FF]/g, '_')  // استبدال الرموز بـ _
+        .replace(/_+/g, '_')                  // دمج _ المتكررة
+        .replace(/^_|_$/g, '')                // إزالة _ من البداية والنهاية
+        .toLowerCase();
 }
 
 
@@ -225,92 +319,13 @@ async saveVisitedJobs() {
     }
 }
 
-// 🆕 تسجيل وظيفة كمزارة فور الدخول عليها
-markJobAsVisited(jobCard) {
-    const jobIds = this.generateJobIdentifiers(jobCard);
-    
-    this.debugLog(`📝 تسجيل وظيفة كمزارة: ${jobCard.title}`);
-    
-    // إضافة جميع المعرفات الممكنة
-    for (const id of jobIds) {
-        this.visitedJobs.add(id);
-    }
-    
-    this.debugLog(`🔑 تم حفظ ${jobIds.length} معرف مختلف للوظيفة`);
-    this.debugLog(`📊 إجمالي الوظائف المزارة: ${this.visitedJobs.size}`);
-    
-    // حفظ فوري في التخزين
-    this.saveVisitedJobs();
-}
+
 
 // 🆕 فحص إذا كانت الوظيفة مزارة سابقاً
-isJobVisited(jobCard) {
-    const jobIds = this.generateJobIdentifiers(jobCard);
-    
-    this.debugLog(`🔍 فحص زيارة الوظيفة: ${jobCard.title}`);
-    
-    // فحص كل معرف ممكن
-    for (const id of jobIds) {
-        if (this.visitedJobs.has(id)) {
-            this.debugLog(`🚫 وظيفة مزارة سابقاً: ${jobCard.title} - ${id.substring(0, 20)}...`);
-            return true;
-        }
-    }
-    
-    this.debugLog(`✅ وظيفة جديدة غير مزارة: ${jobCard.title}`);
-    return false;
-}
+
 
 // 🆕 توليد معرفات شاملة للوظيفة (أقوى من النظام السابق)
-generateJobIdentifiers(jobCard) {
-    const identifiers = [];
-    
-    try {
-        // 1. معرف URL الأساسي (الأقوى)
-        const urlId = this.getJobUniqueId(jobCard.link);
-        if (urlId) {
-            identifiers.push(urlId);
-            identifiers.push(`url_${urlId}`);
-        }
-        
-        // 2. معرف عنوان الوظيفة
-        const jobTitle = jobCard.title || '';
-        if (jobTitle) {
-            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            identifiers.push(`title_${cleanTitle}`);
-            identifiers.push(jobTitle.toLowerCase());
-            identifiers.push(cleanTitle);
-        }
-        
-        // 3. معرف الشركة + الوظيفة
-        const companyName = this.extractCompanyName(jobCard);
-        if (companyName && jobTitle) {
-            const cleanCompany = companyName.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            identifiers.push(`job_${cleanTitle}_company_${cleanCompany}`);
-            identifiers.push(`${jobTitle}_${companyName}`.replace(/\s+/g, '_').toLowerCase());
-        }
-        
-        // 4. معرف هاش الرابط
-        if (jobCard.link && jobCard.link.href) {
-            const linkHash = btoa(jobCard.link.href).replace(/[^A-Za-z0-9]/g, '').substring(0, 32);
-            identifiers.push(`link_${linkHash}`);
-        }
-        
-        // 5. معرف احتياطي
-        if (identifiers.length === 0) {
-            const emergencyId = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            identifiers.push(emergencyId);
-            this.debugLog(`🚨 استخدام معرف طوارئ: ${emergencyId}`);
-        }
-        
-    } catch (error) {
-        this.debugLog('❌ خطأ في توليد المعرفات:', error);
-        identifiers.push(`error_${Date.now()}`);
-    }
-    
-    return identifiers;
-}
+
 
 
 // ===============================
@@ -345,92 +360,6 @@ async saveVisitedJobs() {
     }
 }
 
-// 🆕 تسجيل وظيفة كمزارة فور الدخول عليها
-markJobAsVisited(jobCard) {
-    const jobIds = this.generateJobIdentifiers(jobCard);
-    
-    this.debugLog(`📝 تسجيل وظيفة كمزارة: ${jobCard.title}`);
-    
-    // إضافة جميع المعرفات الممكنة
-    for (const id of jobIds) {
-        this.visitedJobs.add(id);
-    }
-    
-    this.debugLog(`🔑 تم حفظ ${jobIds.length} معرف مختلف للوظيفة`);
-    this.debugLog(`📊 إجمالي الوظائف المزارة: ${this.visitedJobs.size}`);
-    
-    // حفظ فوري في التخزين
-    this.saveVisitedJobs();
-}
-
-// 🆕 فحص إذا كانت الوظيفة مزارة سابقاً
-isJobVisited(jobCard) {
-    const jobIds = this.generateJobIdentifiers(jobCard);
-    
-    this.debugLog(`🔍 فحص زيارة الوظيفة: ${jobCard.title}`);
-    
-    // فحص كل معرف ممكن
-    for (const id of jobIds) {
-        if (this.visitedJobs.has(id)) {
-            this.debugLog(`🚫 وظيفة مزارة سابقاً: ${jobCard.title} - ${id.substring(0, 20)}...`);
-            return true;
-        }
-    }
-    
-    this.debugLog(`✅ وظيفة جديدة غير مزارة: ${jobCard.title}`);
-    return false;
-}
-
-// 🆕 توليد معرفات شاملة للوظيفة (أقوى من النظام السابق)
-generateJobIdentifiers(jobCard) {
-    const identifiers = [];
-    
-    try {
-        // 1. معرف URL الأساسي (الأقوى)
-        const urlId = this.getJobUniqueId(jobCard.link);
-        if (urlId) {
-            identifiers.push(urlId);
-            identifiers.push(`url_${urlId}`);
-        }
-        
-        // 2. معرف عنوان الوظيفة
-        const jobTitle = jobCard.title || '';
-        if (jobTitle) {
-            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            identifiers.push(`title_${cleanTitle}`);
-            identifiers.push(jobTitle.toLowerCase());
-            identifiers.push(cleanTitle);
-        }
-        
-        // 3. معرف الشركة + الوظيفة
-        const companyName = this.extractCompanyName(jobCard);
-        if (companyName && jobTitle) {
-            const cleanCompany = companyName.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
-            identifiers.push(`job_${cleanTitle}_company_${cleanCompany}`);
-            identifiers.push(`${jobTitle}_${companyName}`.replace(/\s+/g, '_').toLowerCase());
-        }
-        
-        // 4. معرف هاش الرابط
-        if (jobCard.link && jobCard.link.href) {
-            const linkHash = btoa(jobCard.link.href).replace(/[^A-Za-z0-9]/g, '').substring(0, 32);
-            identifiers.push(`link_${linkHash}`);
-        }
-        
-        // 5. معرف احتياطي
-        if (identifiers.length === 0) {
-            const emergencyId = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            identifiers.push(emergencyId);
-            this.debugLog(`🚨 استخدام معرف طوارئ: ${emergencyId}`);
-        }
-        
-    } catch (error) {
-        this.debugLog('❌ خطأ في توليد المعرفات:', error);
-        identifiers.push(`error_${Date.now()}`);
-    }
-    
-    return identifiers;
-}
 
 
 // ===============================
@@ -3071,69 +3000,213 @@ this.currentJobIndex = jobIndex; // تحديث الفهرس الحالي
         }
 extractCompanyName(jobCard) {
     try {
-        this.debugLog(`🔍 استخراج اسم الشركة للوظيفة: ${jobCard.title}`);
+        this.debugLog(`🔍 استخراج محسن لاسم الشركة: ${jobCard.title}`);
         
-        // البحث عن العنصر الحاوي للبطاقة
         const cardElement = jobCard.link.closest('[data-container]');
-        
-        if (cardElement) {
-            // طريقة 1: البحث عن الشركة في بداية البطاقة
-           // طريقة 1: البحث عن الشركة في بداية البطاقة (تجنب عنوان الوظيفة)
-const companyElements = cardElement.querySelectorAll('div[data-container] a[data-link] span[data-expression]');
-for (const element of companyElements) {
-    const text = element.textContent?.trim();
-    if (text && text !== jobCard.title && text.length > 3) {
-        this.debugLog(`🏢 وجد اسم الشركة (طريقة 1): ${text}`);
-        return text;
-    }
-}
+        if (!cardElement) {
+            this.debugLog('❌ لم يوجد عنصر data-container');
+            return 'no_container';
+        }
+
+        // طريقة 1: البحث عن أول رابط يحتوي على اسم شركة (قبل رابط الوظيفة)
+        const allLinks = cardElement.querySelectorAll('a[data-link]');
+        for (let i = 0; i < allLinks.length; i++) {
+            const link = allLinks[i];
             
-            // طريقة 2: البحث في جميع النصوص لإيجاد أنماط الشركات
-            const allSpans = Array.from(cardElement.querySelectorAll('span[data-expression]'));
-            
-            for (const span of allSpans) {
-                const text = span.textContent?.trim();
-                if (text && text !== jobCard.title && text.length > 5) {
-                    // تحقق من وجود كلمات مفتاحية للشركات
-                    const companyPatterns = [
-                        /مؤسسة.*/, /شركة.*/, /مكتب.*/, /مجموعة.*/, 
-                        /.*للاستشارات.*/, /.*للخدمات.*/, /.*للتطوير.*/,
-                        /.*هندسية.*/, /.*تجارية.*/, /.*صناعية.*/
-                    ];
-                    
-                    if (companyPatterns.some(pattern => pattern.test(text))) {
-                        this.debugLog(`🏢 وجد اسم الشركة (طريقة 2): ${text}`);
-                        return text;
-                    }
-                }
+            // تجاهل رابط الوظيفة نفسها
+            if (link === jobCard.link || link.href?.includes('JobDetails')) {
+                continue;
             }
             
-            // طريقة 3: أخذ أول نص ليس عنوان الوظيفة
-            for (const span of allSpans) {
-                const text = span.textContent?.trim();
-                if (text && text !== jobCard.title && text.length > 3 && 
-                    !text.includes('%') && !text.match(/^\d+$/)) {
-                    this.debugLog(`🏢 وجد اسم الشركة (طريقة 3): ${text}`);
+            const span = link.querySelector('span[data-expression]');
+            if (span) {
+                const companyText = span.textContent?.trim();
+                if (companyText && companyText !== jobCard.title && companyText.length > 5) {
+                    this.debugLog(`🏢 وجد اسم الشركة (رابط منفصل): ${companyText}`);
+                    return companyText;
+                }
+            }
+        }
+
+        // طريقة 2: البحث في أول span قبل عنوان الوظيفة
+        const allSpans = Array.from(cardElement.querySelectorAll('span[data-expression]'));
+        const jobTitleIndex = allSpans.findIndex(span => 
+            span.textContent?.trim() === jobCard.title
+        );
+
+        if (jobTitleIndex > 0) {
+            // أخذ أول span قبل عنوان الوظيفة
+            for (let i = 0; i < jobTitleIndex; i++) {
+                const text = allSpans[i].textContent?.trim();
+                if (text && text.length > 5 && !text.includes('%') && !text.match(/^\d+$/)) {
+                    this.debugLog(`🏢 وجد اسم الشركة (ترتيب span): ${text}`);
                     return text;
                 }
             }
         }
-        
-        // طريقة 4: استخراج من معرف URL كبديل أخير
-        const urlParam = this.getJobUniqueId(jobCard.link);
-        if (urlParam) {
-            const companyId = `company_${urlParam.substring(0, 10)}`;
-            this.debugLog(`🏢 استخدام معرف URL كشركة: ${companyId}`);
-            return companyId;
+
+        // طريقة 3: البحث بالكلمات المفتاحية للشركات
+        for (const span of allSpans) {
+            const text = span.textContent?.trim();
+            if (text && text !== jobCard.title && text.length > 5) {
+                const companyKeywords = [
+                    'مؤسسة', 'شركة', 'مكتب', 'مجموعة', 'مركز',
+                    'للاستشارات', 'للخدمات', 'للتطوير', 'للتقنية',
+                    'هندسية', 'تجارية', 'صناعية', 'طبية'
+                ];
+                
+                const hasCompanyKeyword = companyKeywords.some(keyword => 
+                    text.includes(keyword)
+                );
+                
+                if (hasCompanyKeyword) {
+                    this.debugLog(`🏢 وجد اسم الشركة (كلمة مفتاحية): ${text}`);
+                    return text;
+                }
+            }
         }
-        
-        this.debugLog(`⚠️ لم يتم العثور على اسم الشركة، استخدام default`);
-        return 'unknown_company';
+
+        // طريقة 4: أخذ أطول نص ليس عنوان الوظيفة
+        let longestText = '';
+        for (const span of allSpans) {
+            const text = span.textContent?.trim();
+            if (text && text !== jobCard.title && text.length > longestText.length && 
+                text.length > 5 && !text.includes('%') && !text.match(/^\d+$/)) {
+                longestText = text;
+            }
+        }
+
+        if (longestText) {
+            this.debugLog(`🏢 وجد اسم الشركة (أطول نص): ${longestText}`);
+            return longestText;
+        }
+
+        // فشل في استخراج اسم الشركة
+        this.debugLog(`⚠️ فشل في استخراج اسم الشركة للوظيفة: ${jobCard.title}`);
+        return `unknown_company_${Date.now()}`;
         
     } catch (error) {
         this.debugLog('❌ خطأ في استخراج اسم الشركة:', error);
         return `error_company_${Date.now()}`;
     }
+}
+
+// 🆕 دالة شاملة لاستخراج جميع بيانات الوظيفة من HTML
+extractJobDataFromHTML(jobCard) {
+    try {
+        this.debugLog(`📊 استخراج بيانات شاملة للوظيفة: ${jobCard.title}`);
+        
+        const cardElement = jobCard.link.closest('[data-container]');
+        if (!cardElement) {
+            return this.getMinimalJobData(jobCard);
+        }
+
+        const jobData = {
+            title: jobCard.title,
+            company: null,
+            city: null,
+            matchingScore: null,
+            publishDate: null,
+            availableJobs: null
+        };
+
+        // استخراج اسم الشركة المحسن
+        jobData.company = this.extractCompanyName(jobCard);
+
+        // استخراج باقي البيانات من العناصر المنظمة
+        const allSpans = Array.from(cardElement.querySelectorAll('span[data-expression]'));
+        const allDivs = Array.from(cardElement.querySelectorAll('div'));
+
+        // البحث عن نسبة التوافق (تحتوي على %)
+        for (const span of allSpans) {
+            const text = span.textContent?.trim();
+            if (text && text.includes('%')) {
+                jobData.matchingScore = text;
+                this.debugLog(`📊 نسبة التوافق: ${text}`);
+                break;
+            }
+        }
+
+        // البحث عن المدينة (بعد كلمة "المدينة")
+        for (let i = 0; i < allDivs.length; i++) {
+            const div = allDivs[i];
+            if (div.textContent?.includes('المدينة')) {
+                // البحث في العناصر التالية
+                for (let j = i + 1; j < Math.min(i + 3, allDivs.length); j++) {
+                    const nextDiv = allDivs[j];
+                    const span = nextDiv.querySelector('span[data-expression]');
+                    if (span) {
+                        const cityText = span.textContent?.trim();
+                        if (cityText && !cityText.includes('%') && cityText.length < 30) {
+                            jobData.city = cityText;
+                            this.debugLog(`🏙️ المدينة: ${cityText}`);
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        // البحث عن تاريخ النشر (بعد كلمة "تاريخ النشر")
+        for (let i = 0; i < allDivs.length; i++) {
+            const div = allDivs[i];
+            if (div.textContent?.includes('تاريخ النشر')) {
+                for (let j = i + 1; j < Math.min(i + 3, allDivs.length); j++) {
+                    const nextDiv = allDivs[j];
+                    const span = nextDiv.querySelector('span[data-expression]');
+                    if (span) {
+                        const dateText = span.textContent?.trim();
+                        if (dateText && dateText.match(/\d{2}\/\d{2}\/\d{4}/)) {
+                            jobData.publishDate = dateText;
+                            this.debugLog(`📅 تاريخ النشر: ${dateText}`);
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        // البحث عن عدد الوظائف المتاحة
+        for (let i = 0; i < allDivs.length; i++) {
+            const div = allDivs[i];
+            if (div.textContent?.includes('الوظائف المتاحة')) {
+                for (let j = i + 1; j < Math.min(i + 3, allDivs.length); j++) {
+                    const nextDiv = allDivs[j];
+                    const span = nextDiv.querySelector('span[data-expression]');
+                    if (span) {
+                        const jobsText = span.textContent?.trim();
+                        if (jobsText && jobsText.match(/^\d+$/)) {
+                            jobData.availableJobs = jobsText;
+                            this.debugLog(`💼 الوظائف المتاحة: ${jobsText}`);
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        this.debugLog(`📋 البيانات المستخرجة:`, jobData);
+        return jobData;
+        
+    } catch (error) {
+        this.debugLog('❌ خطأ في استخراج البيانات:', error);
+        return this.getMinimalJobData(jobCard);
+    }
+}
+
+// دالة مساعدة للحصول على بيانات أساسية في حالة الفشل
+getMinimalJobData(jobCard) {
+    return {
+        title: jobCard.title || 'unknown_job',
+        company: 'unknown_company',
+        city: null,
+        matchingScore: null,
+        publishDate: null,
+        availableJobs: null
+    };
 }
 
 isJobRejected(jobCard) {
