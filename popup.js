@@ -108,15 +108,10 @@ constructor() {
         this.modeSelect?.addEventListener('change', () => this.saveSettings());
         this.soundToggle?.addEventListener('change', () => this.saveSettings());
 
-        this.enableControls();
-        if (this.startBtn) this.startBtn.disabled = false;
-        if (this.restartBtn) this.restartBtn.disabled = false;
-        if (this.exportBtn) this.exportBtn.disabled = false;
-        if (this.clearRejectionBtn) this.clearRejectionBtn.disabled = false;
-        if (this.clearRejectedJobsBtn) this.clearRejectedJobsBtn.disabled = false;
-        if (this.clearVisitedJobsBtn) this.clearVisitedJobsBtn.disabled = false;
-        if (this.clearAllJobDataBtn) this.clearAllJobDataBtn.disabled = false;
-    }
+        // بيانات الرفض
+        this.exportBtn?.addEventListener('click', () => this.exportRejectionData());
+        this.clearRejectionBtn?.addEventListener('click', () => this.clearRejectionData());
+        this.clearRejectedJobsBtn?.addEventListener('click', () => this.clearJobMemory());
 
         // 🆕 إدارة الوظائف المزارة
         this.clearVisitedJobsBtn?.addEventListener('click', () => this.clearVisitedJobs());
@@ -146,6 +141,15 @@ constructor() {
                 setTimeout(() => this.checkConnection(), 2000);
             }
         });
+
+        this.enableControls();
+        if (this.startBtn) this.startBtn.disabled = false;
+        if (this.restartBtn) this.restartBtn.disabled = false;
+        if (this.exportBtn) this.exportBtn.disabled = false;
+        if (this.clearRejectionBtn) this.clearRejectionBtn.disabled = false;
+        if (this.clearRejectedJobsBtn) this.clearRejectedJobsBtn.disabled = false;
+        if (this.clearVisitedJobsBtn) this.clearVisitedJobsBtn.disabled = false;
+        if (this.clearAllJobDataBtn) this.clearAllJobDataBtn.disabled = false;
     }
 
     async initializeConnection() {
@@ -419,7 +423,8 @@ handleSuccessfulConnection(response) {
         if (this.exportBtn) this.exportBtn.disabled = false;
         if (this.clearRejectionBtn) this.clearRejectionBtn.disabled = false;
         if (this.clearRejectedJobsBtn) this.clearRejectedJobsBtn.disabled = false;
-
+        if (this.clearVisitedJobsBtn) this.clearVisitedJobsBtn.disabled = false;
+        if (this.clearAllJobDataBtn) this.clearAllJobDataBtn.disabled = false;
     }
 
     disableAllControls() {
@@ -431,7 +436,8 @@ handleSuccessfulConnection(response) {
         if (this.exportBtn) this.exportBtn.disabled = true;
         if (this.clearRejectionBtn) this.clearRejectionBtn.disabled = true;
         if (this.clearRejectedJobsBtn) this.clearRejectedJobsBtn.disabled = true;
-
+        if (this.clearVisitedJobsBtn) this.clearVisitedJobsBtn.disabled = true;
+        if (this.clearAllJobDataBtn) this.clearAllJobDataBtn.disabled = true;
     }
 
     showDebugSection(error, url) {
@@ -742,26 +748,7 @@ handleSuccessfulConnection(response) {
         if (this.rejectedCount) this.rejectedCount.textContent = this.stats.rejected || 0;
         if (this.totalCount) this.totalCount.textContent = this.stats.total || 0;
     }
-async clearRejectionData() {
-    if (confirm('هل أنت متأكد من مسح جميع بيانات الرفض؟')) {
-        try {
-            await chrome.runtime.sendMessage({
-                action: 'CLEAR_REJECTION_DATA'
-            });
 
-            if (this.rejectionInfo) {
-                this.rejectionInfo.innerHTML = `
-                    <span class="info-text">لا توجد بيانات رفض بعد</span>
-                `;
-            }
-
-            this.showNotification('تم مسح بيانات الرفض');
-        } catch (error) {
-            console.error('Error clearing rejection data:', error);
-            this.showError('خطأ في مسح البيانات');
-        }
-    }
-}
     setProgress(percentage, text) {
         if (this.progressFill) {
             this.progressFill.style.width = percentage + '%';
@@ -773,32 +760,72 @@ async clearRejectionData() {
             this.progressText.textContent = text;
         }
     }
-// 🆕 دالة جديدة لمسح الوظائف المزارة
-async clearVisitedJobs() {
-    if (confirm('هل أنت متأكد من مسح جميع الوظائف المزارة؟\n\n⚠️ هذا سيجعل الإضافة تدخل لجميع الوظائف مرة أخرى!')) {
-        try {
-            this.sendMessageFireAndForget({ action: 'CLEAR_VISITED_JOBS' });
-            this.showNotification('تم مسح قائمة الوظائف المزارة');
-        } catch (error) {
-            console.error('Error clearing visited jobs:', error);
-            this.showError('خطأ في مسح الوظائف المزارة');
-        }
-    }
-}
 
-// 🆕 دالة لمسح جميع بيانات الوظائف
-async clearAllJobData() {
-    if (confirm('هل أنت متأكد من مسح جميع بيانات الوظائف؟\n\n⚠️ هذا سيمسح:\n- الوظائف المزارة\n- الوظائف المرفوضة\n- بيانات الرفض')) {
-        try {
-            this.sendMessageFireAndForget({ action: 'CLEAR_ALL_JOB_DATA' });
-            await chrome.runtime.sendMessage({ action: 'CLEAR_REJECTION_DATA' });
-            this.showNotification('تم مسح جميع بيانات الوظائف');
-        } catch (error) {
-            console.error('Error clearing all job data:', error);
-            this.showError('خطأ في مسح جميع البيانات');
+    // 🆕 دالة جديدة لمسح الوظائف المزارة
+    async clearVisitedJobs() {
+        if (confirm('هل أنت متأكد من مسح الوظائف المزارة؟\n\nسيتم زيارة جميع الوظائف مرة أخرى.')) {
+            try {
+                this.sendMessageFireAndForget({ action: 'CLEAR_VISITED_JOBS' });
+                this.showNotification('تم مسح الوظائف المزارة');
+            } catch (error) {
+                console.error('Error clearing visited jobs:', error);
+                this.showError('خطأ في مسح الوظائف المزارة');
+            }
         }
     }
-}
+
+    // 🆕 دالة لمسح جميع بيانات الوظائف
+    async clearAllJobData() {
+        if (confirm('هل أنت متأكد من مسح جميع بيانات الوظائف؟\n\n⚠️ هذا سيمسح:\n- الوظائف المزارة\n- الوظائف المرفوضة\n- بيانات الرفض')) {
+            try {
+                this.sendMessageFireAndForget({ action: 'CLEAR_ALL_JOB_DATA' });
+                await chrome.runtime.sendMessage({ action: 'CLEAR_REJECTION_DATA' });
+                this.showNotification('تم مسح جميع بيانات الوظائف');
+            } catch (error) {
+                console.error('Error clearing all job data:', error);
+                this.showError('خطأ في مسح جميع البيانات');
+            }
+        }
+    }
+
+    async clearRejectionData() {
+        if (confirm('هل أنت متأكد من مسح جميع بيانات الرفض؟')) {
+            try {
+                await chrome.runtime.sendMessage({
+                    action: 'CLEAR_REJECTION_DATA'
+                });
+
+                if (this.rejectionInfo) {
+                    this.rejectionInfo.innerHTML = `
+                        <span class="info-text">لا توجد بيانات رفض بعد</span>
+                    `;
+                }
+
+                this.showNotification('تم مسح بيانات الرفض');
+            } catch (error) {
+                console.error('Error clearing rejection data:', error);
+                this.showError('خطأ في مسح البيانات');
+            }
+        }
+    }
+
+    async clearJobMemory() {
+        if (confirm('هل أنت متأكد من مسح ذاكرة الوظائف المعالجة؟\n\nسيتم التقديم مجدداً على جميع الوظائف المرفوضة سابقاً.')) {
+            try {
+                // إرسال أمر مسح الذاكرة لـ content script
+                this.sendMessageFireAndForget({ action: 'CLEAR_JOB_MEMORY' });
+                
+                // مسح الذاكرة من التخزين المحلي
+                await chrome.storage.local.remove(['jobMemory']);
+                
+                this.showNotification('تم مسح ذاكرة الوظائف بنجاح');
+            } catch (error) {
+                console.error('Error clearing job memory:', error);
+                this.showError('خطأ في مسح ذاكرة الوظائف');
+            }
+        }
+    }
+
     updateCurrentJob(jobTitle, status, reason) {
         if (!this.currentJob) return;
         
@@ -889,42 +916,6 @@ async clearAllJobData() {
         }
     }
 
-    async clearRejectionData() {
-        if (confirm('هل أنت متأكد من مسح جميع بيانات الرفض؟')) {
-            try {
-                await chrome.runtime.sendMessage({
-                    action: 'CLEAR_REJECTION_DATA'
-                });
-
-                if (this.rejectionInfo) {
-                    this.rejectionInfo.innerHTML = `
-                        <span class="info-text">لا توجد بيانات رفض بعد</span>
-                    `;
-                }
-
-                this.showNotification('تم مسح بيانات الرفض');
-            } catch (error) {
-                console.error('Error clearing rejection data:', error);
-                this.showError('خطأ في مسح البيانات');
-            }
-        }
-    }
-async clearJobMemory() {
-    if (confirm('هل أنت متأكد من مسح ذاكرة الوظائف المعالجة؟\n\nسيتم التقديم مجدداً على جميع الوظائف المرفوضة سابقاً.')) {
-        try {
-            // إرسال أمر مسح الذاكرة لـ content script
-            this.sendMessageFireAndForget({ action: 'CLEAR_JOB_MEMORY' });
-            
-            // مسح الذاكرة من التخزين المحلي
-            await chrome.storage.local.remove(['jobMemory']);
-            
-            this.showNotification('تم مسح ذاكرة الوظائف بنجاح');
-        } catch (error) {
-            console.error('Error clearing job memory:', error);
-            this.showError('خطأ في مسح ذاكرة الوظائف');
-        }
-    }
-}
     showHelp() {
         const helpText = `
 مساعدة جدارات أوتو:
@@ -1067,7 +1058,6 @@ function checkExtensionHealth() {
     
     console.log('🏥 فحص صحة الإضافة:', health);
     return health;
-    
 }
 
 // إتاحة دالة الفحص عالمياً للتشخيص
