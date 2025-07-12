@@ -1599,13 +1599,19 @@ case 'GET_REJECTED_COUNT':
                     this.debugLog('📊 نتيجة التقديم:', applicationResult);
 
  if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
-    // إنشاء jobCard مؤقت للوظيفة الحالية
+    // إنشاء jobCard مؤقت محسن للوظيفة الحالية
     const currentJobCard = {
         title: jobTitle,
-        link: { 
-            href: window.location.href
+        link: {
+            href: window.location.href,
+            // إضافة خصائص مطلوبة لتجنب الأخطاء
+            tagName: 'A',
+            textContent: jobTitle,
+            parentElement: null
         }
     };
+    
+    this.debugLog(`📝 إنشاء jobCard مؤقت: ${jobTitle} - ${window.location.href.substring(0, 50)}...`);
     
     this.handleApplicationResult(applicationResult, jobTitle, currentJobCard);
     this.debugLog('✅ تم التعامل مع نتيجة التقديم');
