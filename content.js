@@ -1598,25 +1598,43 @@ case 'GET_REJECTED_COUNT':
                     const applicationResult = await this.applyForJobImproved();
                     this.debugLog('📊 نتيجة التقديم:', applicationResult);
 
- if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
-    // إنشاء jobCard مؤقت محسن للوظيفة الحالية
-    const currentJobCard = {
-        title: jobTitle,
-        link: {
-            href: window.location.href,
-            // إضافة خصائص مطلوبة لتجنب الأخطاء
-            tagName: 'A',
-            textContent: jobTitle,
-            parentElement: null
+if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
+    // معالجة النتيجة مباشرة بدون jobCard معقد
+    if (applicationResult.success) {
+        this.stats.applied++;
+        this.sendMessage('UPDATE_CURRENT_JOB', { 
+            jobTitle: jobTitle, 
+            status: 'success' 
+        });
+        this.debugLog('✅ تم التقديم بنجاح');
+        
+    } else if (applicationResult.type === 'rejection') {
+        this.stats.rejected = (this.stats.rejected || 0) + 1;
+        
+        // حفظ الوظيفة المرفوضة بطريقة مبسطة
+        const currentUrl = window.location.href;
+        const jobParam = this.getJobUniqueId({ href: currentUrl });
+        
+        if (jobParam) {
+            this.rejectedJobs.add(jobParam);
+            this.saveRejectedJobs();
+            this.debugLog(`🚫 تم حفظ وظيفة مرفوضة: ${jobTitle} - ${jobParam.substring(0, 15)}...`);
         }
-    };
+        
+        // حفظ بيانات الرفض للتصدير
+        this.saveRejectionData(jobTitle, applicationResult.reason);
+        
+        this.sendMessage('UPDATE_CURRENT_JOB', { 
+            jobTitle: jobTitle, 
+            status: 'rejected',
+            reason: applicationResult.reason
+        });
+        this.debugLog('❌ تم رفض التقديم وحفظ في قائمة المرفوضة:', applicationResult.reason);
+    }
     
-    this.debugLog(`📝 إنشاء jobCard مؤقت: ${jobTitle} - ${window.location.href.substring(0, 50)}...`);
-    
-    this.handleApplicationResult(applicationResult, jobTitle, currentJobCard);
     this.debugLog('✅ تم التعامل مع نتيجة التقديم');
 } else {
-
+    
     this.debugLog('⚠️ لم يتم التقديم بشكل صحيح، تسجيل كتخطي');
     this.stats.skipped++;
     this.sendMessage('UPDATE_CURRENT_JOB', { 
