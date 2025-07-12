@@ -1561,105 +1561,104 @@ case 'GET_REJECTED_COUNT':
             }
         }
 
-        async processCurrentJob() {
-            try {
-                const jobTitle = this.resumeData?.jobTitle || this.extractCurrentJobTitleImproved();
-                
-                this.debugLog(`📝 معالجة الوظيفة الحالية: ${jobTitle}`);
-                
-                this.sendMessage('UPDATE_CURRENT_JOB', { 
-                    jobTitle: jobTitle, 
-                    status: 'processing' 
-                });
+async processCurrentJob() {
+    try {
+        const jobTitle = this.resumeData?.jobTitle || this.extractCurrentJobTitleImproved();
+        
+        this.debugLog(`📝 معالجة الوظيفة الحالية: ${jobTitle}`);
+        
+        this.sendMessage('UPDATE_CURRENT_JOB', { 
+            jobTitle: jobTitle, 
+            status: 'processing' 
+        });
 
-                await this.handlePopups();
-                await this.wait(2000);
-                
-                const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
-                
-                if (alreadyApplied) {
-                    this.debugLog('⏭️ تم التخطي - مُقدم عليها مسبقاً');
-                    
-                    this.stats.skipped++;
+        await this.handlePopups();
+        await this.wait(2000);
+        
+        const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
+        
+        if (alreadyApplied) {
+            this.debugLog('⏭️ تم التخطي - مُقدم عليها مسبقاً');
+            
+            this.stats.skipped++;
+            this.sendMessage('UPDATE_CURRENT_JOB', { 
+                jobTitle: jobTitle, 
+                status: 'skipped' 
+            });
+            
+        } else {
+            this.debugLog('📝 بدء عملية التقديم...');
+            
+            this.sendMessage('UPDATE_PROGRESS', { 
+                progress: 50, 
+                text: 'جاري التقديم على الوظيفة...' 
+            });
+            
+            this.debugLog('🚀 بدء عملية التقديم الفعلية...');
+            const applicationResult = await this.applyForJobImproved();
+            this.debugLog('📊 نتيجة التقديم:', applicationResult);
+
+            // معالجة النتيجة مباشرة بدون jobCard معقد
+            if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
+                if (applicationResult.success) {
+                    this.stats.applied++;
                     this.sendMessage('UPDATE_CURRENT_JOB', { 
                         jobTitle: jobTitle, 
-                        status: 'skipped' 
+                        status: 'success' 
                     });
+                    this.debugLog('✅ تم التقديم بنجاح');
                     
-                } else {
-                    this.debugLog('📝 بدء عملية التقديم...');
+                } else if (applicationResult.type === 'rejection') {
+                    this.stats.rejected = (this.stats.rejected || 0) + 1;
                     
-                    this.sendMessage('UPDATE_PROGRESS', { 
-                        progress: 50, 
-                        text: 'جاري التقديم على الوظيفة...' 
+                    // حفظ الوظيفة المرفوضة بطريقة مبسطة
+                    const currentUrl = window.location.href;
+                    const jobParam = this.getJobUniqueId({ href: currentUrl });
+                    
+                    if (jobParam) {
+                        this.rejectedJobs.add(jobParam);
+                        this.saveRejectedJobs();
+                        this.debugLog(`🚫 تم حفظ وظيفة مرفوضة: ${jobTitle} - ${jobParam.substring(0, 15)}...`);
+                    }
+                    
+                    // حفظ بيانات الرفض للتصدير
+                    this.saveRejectionData(jobTitle, applicationResult.reason);
+                    
+                    this.sendMessage('UPDATE_CURRENT_JOB', { 
+                        jobTitle: jobTitle, 
+                        status: 'rejected',
+                        reason: applicationResult.reason
                     });
-                    
-                    this.debugLog('🚀 بدء عملية التقديم الفعلية...');
-                    const applicationResult = await this.applyForJobImproved();
-                    this.debugLog('📊 نتيجة التقديم:', applicationResult);
-
-if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
-    // معالجة النتيجة مباشرة بدون jobCard معقد
-    if (applicationResult.success) {
-        this.stats.applied++;
-        this.sendMessage('UPDATE_CURRENT_JOB', { 
-            jobTitle: jobTitle, 
-            status: 'success' 
-        });
-        this.debugLog('✅ تم التقديم بنجاح');
-        
-    } else if (applicationResult.type === 'rejection') {
-        this.stats.rejected = (this.stats.rejected || 0) + 1;
-        
-        // حفظ الوظيفة المرفوضة بطريقة مبسطة
-        const currentUrl = window.location.href;
-        const jobParam = this.getJobUniqueId({ href: currentUrl });
-        
-        if (jobParam) {
-            this.rejectedJobs.add(jobParam);
-            this.saveRejectedJobs();
-            this.debugLog(`🚫 تم حفظ وظيفة مرفوضة: ${jobTitle} - ${jobParam.substring(0, 15)}...`);
-        }
-        
-        // حفظ بيانات الرفض للتصدير
-        this.saveRejectionData(jobTitle, applicationResult.reason);
-        
-        this.sendMessage('UPDATE_CURRENT_JOB', { 
-            jobTitle: jobTitle, 
-            status: 'rejected',
-            reason: applicationResult.reason
-        });
-        this.debugLog('❌ تم رفض التقديم وحفظ في قائمة المرفوضة:', applicationResult.reason);
-    }
-    
-    this.debugLog('✅ تم التعامل مع نتيجة التقديم');
-} else {
-    
-    this.debugLog('⚠️ لم يتم التقديم بشكل صحيح، تسجيل كتخطي');
-    this.stats.skipped++;
-    this.sendMessage('UPDATE_CURRENT_JOB', { 
-        jobTitle: jobTitle, 
-        status: 'skipped',
-        reason: 'فشل في التقديم'
-    });
-}
+                    this.debugLog('❌ تم رفض التقديم وحفظ في قائمة المرفوضة:', applicationResult.reason);
                 }
-
-                this.stats.total++;
-                this.sendMessage('UPDATE_STATS', { stats: this.stats });
                 
-                this.sendMessage('UPDATE_PROGRESS', { 
-                    progress: 80, 
-                    text: 'تمت معالجة الوظيفة الحالية' 
+                this.debugLog('✅ تم التعامل مع نتيجة التقديم');
+            } else {
+                this.debugLog('⚠️ لم يتم التقديم بشكل صحيح، تسجيل كتخطي');
+                this.stats.skipped++;
+                this.sendMessage('UPDATE_CURRENT_JOB', { 
+                    jobTitle: jobTitle, 
+                    status: 'skipped',
+                    reason: 'فشل في التقديم'
                 });
-                
-                return { completed: true };
-
-            } catch (error) {
-                this.debugLog('❌ خطأ في معالجة الوظيفة الحالية:', error);
-                return { completed: false, error: error.message };
             }
         }
+
+        this.stats.total++;
+        this.sendMessage('UPDATE_STATS', { stats: this.stats });
+        
+        this.sendMessage('UPDATE_PROGRESS', { 
+            progress: 80, 
+            text: 'تمت معالجة الوظيفة الحالية' 
+        });
+        
+        return { completed: true };
+
+    } catch (error) {
+        this.debugLog('❌ خطأ في معالجة الوظيفة الحالية:', error);
+        return { completed: false, error: error.message };
+    }
+}
 
         // 🚀 عملية التقديم المحسنة الرئيسية
         async applyForJobImproved() {
