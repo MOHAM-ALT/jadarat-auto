@@ -100,105 +100,67 @@ async saveRejectedJobs() {
 
 getJobUniqueId(jobLink) {
     try {
-        // إذا كان jobCard محسن، استخدم المعرف المحسن
-        if (jobLink.parentElement && jobLink.parentElement._enhancedId) {
-            return jobLink.parentElement._enhancedId;
+        const url = jobLink.href || jobLink;
+        
+        // طريقة 1: من parameter Param (الأساسية)
+        const paramMatch = url.match(/Param=([^&]+)/);
+        if (paramMatch) {
+            this.debugLog(`🔍 معرف من Param: ${paramMatch[1].substring(0, 15)}...`);
+            return paramMatch[1];
         }
         
-        const url = jobLink.href;
+        // طريقة 2: من JobDetails مع معرفات طويلة
+        const jobDetailsMatch = url.match(/JobDetails.*?([A-Za-z0-9]{20,})/);
+        if (jobDetailsMatch) {
+            this.debugLog(`🔍 معرف من JobDetails: ${jobDetailsMatch[1].substring(0, 15)}...`);
+            return jobDetailsMatch[1];
+        }
         
-        // طريقة 1: من parameter Param (الطريقة الأصلية)
-        let match = url.match(/Param=([^&]+)/);
-        if (match) return match[1];
+        // طريقة 3: أي معرف طويل (15+ أحرف)
+        const longIdMatch = url.match(/([A-Za-z0-9]{15,})/);
+        if (longIdMatch) {
+            this.debugLog(`🔍 معرف طويل: ${longIdMatch[1].substring(0, 15)}...`);
+            return longIdMatch[1];
+        }
         
-        // طريقة 2: من أي معرف طويل في URL
-        match = url.match(/([a-zA-Z0-9]{15,})/);
-        if (match) return match[1];
-        
-        // طريقة 3: من JobDetails parameters
-        match = url.match(/JobDetails.*?([A-Za-z0-9]{10,})/);
-        if (match) return match[1];
-        
+        this.debugLog(`❌ لم يوجد معرف في URL: ${url.substring(0, 50)}...`);
         return null;
+        
     } catch (error) {
+        this.debugLog(`❌ خطأ في استخراج المعرف:`, error);
         return null;
     }
 }
 // دالة تحسين jobCard لاستخراج المعرف الصحيح
-enhanceJobCardId(jobCard) {
-    try {
-        const currentUrl = window.location.href;
-        
-        // استخراج المعرف من URL الحالي
-        let jobParam = null;
-        
-        // طريقة 1: من parameter Param
-        const paramMatch = currentUrl.match(/Param=([^&]+)/);
-        if (paramMatch) {
-            jobParam = paramMatch[1];
-        }
-        
-        // طريقة 2: من JobDetails ID
-        if (!jobParam) {
-            const jobIdMatch = currentUrl.match(/JobDetails[?&].*?([a-zA-Z0-9]{20,})/);
-            if (jobIdMatch) {
-                jobParam = jobIdMatch[1];
-            }
-        }
-        
-        // طريقة 3: من عنوان الوظيفة كبديل
-        if (!jobParam && jobCard.title) {
-            // استخراج الرقم التعريفي من الصفحة
-            const pageText = document.body.textContent || '';
-            const idMatch = pageText.match(/الرقم التعريفي[:\s]*(\d+)/);
-            if (idMatch) {
-                jobParam = idMatch[1];
-            } else {
-                // استخدام عنوان الوظيفة كمعرف احتياطي
-                jobParam = `title_${btoa(jobCard.title).substring(0, 20)}`;
-            }
-        }
-        
-        // حفظ المعرف في jobCard
-        if (jobParam) {
-            jobCard._enhancedId = jobParam;
-            this.debugLog(`🔍 تم استخراج معرف محسن: ${jobParam.substring(0, 20)}...`);
-        }
-        
-    } catch (error) {
-        this.debugLog(`❌ خطأ في تحسين jobCard:`, error);
-    }
-}
 
 addJobToRejected(jobCard) {
     const jobLink = jobCard.link;
     let jobParam = null;
     
-    // أولوية 1: المعرف المحسن (للوظائف الحالية)
-    if (jobCard._enhancedId) {
-        jobParam = jobCard._enhancedId;
-        this.debugLog(`🎯 استخدام المعرف المحسن: ${jobParam.substring(0, 20)}...`);
-    }
-    // أولوية 2: استخراج من الرابط
-    else if (jobLink && jobLink.href) {
+    this.debugLog(`📝 محاولة حفظ وظيفة مرفوضة: ${jobCard.title}`);
+    
+    // طريقة 1: من الرابط مباشرة
+    if (jobLink && jobLink.href) {
         jobParam = this.getJobUniqueId(jobLink);
+        this.debugLog(`🔗 معرف من الرابط: ${jobParam ? jobParam.substring(0, 15) + '...' : 'فارغ'}`);
     } 
-    // أولوية 3: من النص المباشر
-    else if (typeof jobLink === 'string') {
-        const match = jobLink.match(/Param=([^&]+)/);
-        jobParam = match ? match[1] : null;
+    // طريقة 2: من URL الحالي (للوظيفة الحالية)
+    else {
+        const currentUrl = window.location.href;
+        jobParam = this.getJobUniqueId({ href: currentUrl });
+        this.debugLog(`🌐 معرف من URL الحالي: ${jobParam ? jobParam.substring(0, 15) + '...' : 'فارغ'}`);
     }
     
-    // أولوية 4: من عنوان الوظيفة + timestamp لضمان التفرد
+    // طريقة 3: من عنوان الوظيفة كبديل ثابت
     if (!jobParam && jobCard.title) {
-        const titleHash = btoa(jobCard.title).substring(0, 15);
-        const timeStamp = Date.now().toString().slice(-5);
-        jobParam = `title_${titleHash}_${timeStamp}`;
+        jobParam = `title_${btoa(jobCard.title).replace(/[^A-Za-z0-9]/g, '').substring(0, 20)}`;
+        this.debugLog(`📝 معرف من العنوان: ${jobParam.substring(0, 15)}...`);
     }
     
-    // أولوية 5: معرف طوارئ
+    // طريقة 4: معرف طوارئ (لا ينبغي الوصول لهنا)
     if (!jobParam) {
-        jobParam = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        jobParam = `emergency_${Date.now()}`;
+        this.debugLog(`🚨 معرف طوارئ: ${jobParam}`);
     }
 
     if (jobParam) {
@@ -214,41 +176,32 @@ addJobToRejected(jobCard) {
 isJobRejected(jobCard) {
     const jobLink = jobCard.link;
     
-    // فحص متعدد المستويات
+    this.debugLog(`🔍 فحص رفض الوظيفة: ${jobCard.title}`);
+    
+    // الطريقة الأساسية: استخراج المعرف
     let jobParam = null;
     
-    // مستوى 1: المعرف المحسن
-    if (jobCard._enhancedId) {
-        jobParam = jobCard._enhancedId;
-    }
-    // مستوى 2: الاستخراج العادي
-    else {
+    if (jobLink && jobLink.href) {
         jobParam = this.getJobUniqueId(jobLink);
     }
     
+    // فحص المعرف الأساسي
     if (jobParam && this.rejectedJobs.has(jobParam)) {
-        this.debugLog(`🧠 وظيفة مرفوضة سابقاً: ${jobCard.title} (${jobParam.substring(0, 15)}...)`);
+        this.debugLog(`🚫 وظيفة مرفوضة سابقاً (معرف): ${jobCard.title} - ${jobParam.substring(0, 15)}...`);
         return true;
     }
     
-    // مستوى 3: فحص بديل بناءً على العنوان
+    // فحص بديل: العنوان فقط (للحالات الطارئة)
     if (jobCard.title) {
-        const titlePatterns = [
-            `title_${btoa(jobCard.title).substring(0, 15)}`,
-            `title_${btoa(jobCard.title).substring(0, 20)}`
-        ];
+        const titleId = `title_${btoa(jobCard.title).replace(/[^A-Za-z0-9]/g, '').substring(0, 20)}`;
         
-        for (const pattern of titlePatterns) {
-            // البحث عن أي معرف يبدأ بهذا النمط
-            for (const rejectedId of this.rejectedJobs) {
-                if (rejectedId.startsWith(pattern)) {
-                    this.debugLog(`🧠 وظيفة مرفوضة سابقاً (بالعنوان): ${jobCard.title}`);
-                    return true;
-                }
-            }
+        if (this.rejectedJobs.has(titleId)) {
+            this.debugLog(`🚫 وظيفة مرفوضة سابقاً (عنوان): ${jobCard.title}`);
+            return true;
         }
     }
     
+    this.debugLog(`✅ وظيفة غير مرفوضة: ${jobCard.title}`);
     return false;
 }
 
@@ -1646,19 +1599,13 @@ case 'GET_REJECTED_COUNT':
                     this.debugLog('📊 نتيجة التقديم:', applicationResult);
 
  if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
-    // إنشاء jobCard مؤقت للوظيفة الحالية مع معرف صحيح
+    // إنشاء jobCard مؤقت للوظيفة الحالية
     const currentJobCard = {
         title: jobTitle,
         link: { 
-            href: window.location.href,
-            // استخراج المعرف من URL الحالي
-            getAttribute: function() { return null; },
-            querySelector: function() { return null; }
+            href: window.location.href
         }
     };
-    
-    // تحسين استخراج المعرف من URL الحالي
-    this.enhanceJobCardId(currentJobCard);
     
     this.handleApplicationResult(applicationResult, jobTitle, currentJobCard);
     this.debugLog('✅ تم التعامل مع نتيجة التقديم');
