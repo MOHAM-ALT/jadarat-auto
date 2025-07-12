@@ -24,9 +24,12 @@ if (window.jadaratAutoContentLoaded) {
             total: 0
         };
 
-        // نظام بسيط لحفظ الوظائف المرفوضة
-        this.rejectedJobs = new Set(); // قائمة معرفات الوظائف المرفوضة
-        this.loadRejectedJobs(); // تحميل القائمة من التخزين
+        // 🆕 نظام متقدم لتتبع الوظائف
+        this.visitedJobs = new Set();  // قائمة الوظائف المزارة (الأهم - لمنع التكرار)
+        this.rejectedJobs = new Set(); // قائمة الوظائف المرفوضة (للإحصائيات)
+        
+        this.loadVisitedJobs();  // تحميل قائمة الوظائف المزارة
+        this.loadRejectedJobs(); // تحميل قائمة الوظائف المرفوضة
 
         this.currentPage = 1;
         this.currentJobIndex = 0;
@@ -72,6 +75,366 @@ if (window.jadaratAutoContentLoaded) {
 
 // ===============================
 // نظام إدارة الوظائف المرفوضة
+// ===============================
+
+// ===============================
+// 🆕 نظام إدارة الوظائف المزارة
+// ===============================
+
+async loadVisitedJobs() {
+    try {
+        const result = await chrome.storage.local.get(['visitedJobs']);
+        if (result.visitedJobs && Array.isArray(result.visitedJobs)) {
+            this.visitedJobs = new Set(result.visitedJobs);
+            this.debugLog(`🧠 تم تحميل ${this.visitedJobs.size} وظيفة مزارة من الذاكرة`);
+        } else {
+            this.debugLog('🧠 لا توجد وظائف مزارة محفوظة');
+        }
+    } catch (error) {
+        this.debugLog('❌ خطأ في تحميل الوظائف المزارة:', error);
+    }
+}
+
+async saveVisitedJobs() {
+    try {
+        const visitedArray = Array.from(this.visitedJobs);
+        await chrome.storage.local.set({ visitedJobs: visitedArray });
+        this.debugLog(`💾 تم حفظ ${visitedArray.length} وظيفة مزارة`);
+    } catch (error) {
+        this.debugLog('❌ خطأ في حفظ الوظائف المزارة:', error);
+    }
+}
+
+// 🆕 تسجيل وظيفة كمزارة فور الدخول عليها
+markJobAsVisited(jobCard) {
+    const jobIds = this.generateJobIdentifiers(jobCard);
+    
+    this.debugLog(`📝 تسجيل وظيفة كمزارة: ${jobCard.title}`);
+    
+    // إضافة جميع المعرفات الممكنة
+    for (const id of jobIds) {
+        this.visitedJobs.add(id);
+    }
+    
+    this.debugLog(`🔑 تم حفظ ${jobIds.length} معرف مختلف للوظيفة`);
+    this.debugLog(`📊 إجمالي الوظائف المزارة: ${this.visitedJobs.size}`);
+    
+    // حفظ فوري في التخزين
+    this.saveVisitedJobs();
+}
+
+// 🆕 فحص إذا كانت الوظيفة مزارة سابقاً
+isJobVisited(jobCard) {
+    const jobIds = this.generateJobIdentifiers(jobCard);
+    
+    this.debugLog(`🔍 فحص زيارة الوظيفة: ${jobCard.title}`);
+    
+    // فحص كل معرف ممكن
+    for (const id of jobIds) {
+        if (this.visitedJobs.has(id)) {
+            this.debugLog(`🚫 وظيفة مزارة سابقاً: ${jobCard.title} - ${id.substring(0, 20)}...`);
+            return true;
+        }
+    }
+    
+    this.debugLog(`✅ وظيفة جديدة غير مزارة: ${jobCard.title}`);
+    return false;
+}
+
+// 🆕 توليد معرفات شاملة للوظيفة (أقوى من النظام السابق)
+generateJobIdentifiers(jobCard) {
+    const identifiers = [];
+    
+    try {
+        // 1. معرف URL الأساسي (الأقوى)
+        const urlId = this.getJobUniqueId(jobCard.link);
+        if (urlId) {
+            identifiers.push(urlId);
+            identifiers.push(`url_${urlId}`);
+        }
+        
+        // 2. معرف عنوان الوظيفة
+        const jobTitle = jobCard.title || '';
+        if (jobTitle) {
+            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            identifiers.push(`title_${cleanTitle}`);
+            identifiers.push(jobTitle.toLowerCase());
+            identifiers.push(cleanTitle);
+        }
+        
+        // 3. معرف الشركة + الوظيفة
+        const companyName = this.extractCompanyName(jobCard);
+        if (companyName && jobTitle) {
+            const cleanCompany = companyName.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            identifiers.push(`job_${cleanTitle}_company_${cleanCompany}`);
+            identifiers.push(`${jobTitle}_${companyName}`.replace(/\s+/g, '_').toLowerCase());
+        }
+        
+        // 4. معرف هاش الرابط
+        if (jobCard.link && jobCard.link.href) {
+            const linkHash = btoa(jobCard.link.href).replace(/[^A-Za-z0-9]/g, '').substring(0, 32);
+            identifiers.push(`link_${linkHash}`);
+        }
+        
+        // 5. معرف احتياطي
+        if (identifiers.length === 0) {
+            const emergencyId = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            identifiers.push(emergencyId);
+            this.debugLog(`🚨 استخدام معرف طوارئ: ${emergencyId}`);
+        }
+        
+    } catch (error) {
+        this.debugLog('❌ خطأ في توليد المعرفات:', error);
+        identifiers.push(`error_${Date.now()}`);
+    }
+    
+    return identifiers;
+}
+
+
+// ===============================
+// نظام إدارة الوظائف المرفوضة (محسن)
+// ===============================
+
+// ===============================
+// 🆕 نظام إدارة الوظائف المزارة
+// ===============================
+
+async loadVisitedJobs() {
+    try {
+        const result = await chrome.storage.local.get(['visitedJobs']);
+        if (result.visitedJobs && Array.isArray(result.visitedJobs)) {
+            this.visitedJobs = new Set(result.visitedJobs);
+            this.debugLog(`🧠 تم تحميل ${this.visitedJobs.size} وظيفة مزارة من الذاكرة`);
+        } else {
+            this.debugLog('🧠 لا توجد وظائف مزارة محفوظة');
+        }
+    } catch (error) {
+        this.debugLog('❌ خطأ في تحميل الوظائف المزارة:', error);
+    }
+}
+
+async saveVisitedJobs() {
+    try {
+        const visitedArray = Array.from(this.visitedJobs);
+        await chrome.storage.local.set({ visitedJobs: visitedArray });
+        this.debugLog(`💾 تم حفظ ${visitedArray.length} وظيفة مزارة`);
+    } catch (error) {
+        this.debugLog('❌ خطأ في حفظ الوظائف المزارة:', error);
+    }
+}
+
+// 🆕 تسجيل وظيفة كمزارة فور الدخول عليها
+markJobAsVisited(jobCard) {
+    const jobIds = this.generateJobIdentifiers(jobCard);
+    
+    this.debugLog(`📝 تسجيل وظيفة كمزارة: ${jobCard.title}`);
+    
+    // إضافة جميع المعرفات الممكنة
+    for (const id of jobIds) {
+        this.visitedJobs.add(id);
+    }
+    
+    this.debugLog(`🔑 تم حفظ ${jobIds.length} معرف مختلف للوظيفة`);
+    this.debugLog(`📊 إجمالي الوظائف المزارة: ${this.visitedJobs.size}`);
+    
+    // حفظ فوري في التخزين
+    this.saveVisitedJobs();
+}
+
+// 🆕 فحص إذا كانت الوظيفة مزارة سابقاً
+isJobVisited(jobCard) {
+    const jobIds = this.generateJobIdentifiers(jobCard);
+    
+    this.debugLog(`🔍 فحص زيارة الوظيفة: ${jobCard.title}`);
+    
+    // فحص كل معرف ممكن
+    for (const id of jobIds) {
+        if (this.visitedJobs.has(id)) {
+            this.debugLog(`🚫 وظيفة مزارة سابقاً: ${jobCard.title} - ${id.substring(0, 20)}...`);
+            return true;
+        }
+    }
+    
+    this.debugLog(`✅ وظيفة جديدة غير مزارة: ${jobCard.title}`);
+    return false;
+}
+
+// 🆕 توليد معرفات شاملة للوظيفة (أقوى من النظام السابق)
+generateJobIdentifiers(jobCard) {
+    const identifiers = [];
+    
+    try {
+        // 1. معرف URL الأساسي (الأقوى)
+        const urlId = this.getJobUniqueId(jobCard.link);
+        if (urlId) {
+            identifiers.push(urlId);
+            identifiers.push(`url_${urlId}`);
+        }
+        
+        // 2. معرف عنوان الوظيفة
+        const jobTitle = jobCard.title || '';
+        if (jobTitle) {
+            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            identifiers.push(`title_${cleanTitle}`);
+            identifiers.push(jobTitle.toLowerCase());
+            identifiers.push(cleanTitle);
+        }
+        
+        // 3. معرف الشركة + الوظيفة
+        const companyName = this.extractCompanyName(jobCard);
+        if (companyName && jobTitle) {
+            const cleanCompany = companyName.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            identifiers.push(`job_${cleanTitle}_company_${cleanCompany}`);
+            identifiers.push(`${jobTitle}_${companyName}`.replace(/\s+/g, '_').toLowerCase());
+        }
+        
+        // 4. معرف هاش الرابط
+        if (jobCard.link && jobCard.link.href) {
+            const linkHash = btoa(jobCard.link.href).replace(/[^A-Za-z0-9]/g, '').substring(0, 32);
+            identifiers.push(`link_${linkHash}`);
+        }
+        
+        // 5. معرف احتياطي
+        if (identifiers.length === 0) {
+            const emergencyId = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            identifiers.push(emergencyId);
+            this.debugLog(`🚨 استخدام معرف طوارئ: ${emergencyId}`);
+        }
+        
+    } catch (error) {
+        this.debugLog('❌ خطأ في توليد المعرفات:', error);
+        identifiers.push(`error_${Date.now()}`);
+    }
+    
+    return identifiers;
+}
+
+
+// ===============================
+// نظام إدارة الوظائف المرفوضة (محسن)
+// ===============================
+
+// ===============================
+// 🆕 نظام إدارة الوظائف المزارة
+// ===============================
+
+async loadVisitedJobs() {
+    try {
+        const result = await chrome.storage.local.get(['visitedJobs']);
+        if (result.visitedJobs && Array.isArray(result.visitedJobs)) {
+            this.visitedJobs = new Set(result.visitedJobs);
+            this.debugLog(`🧠 تم تحميل ${this.visitedJobs.size} وظيفة مزارة من الذاكرة`);
+        } else {
+            this.debugLog('🧠 لا توجد وظائف مزارة محفوظة');
+        }
+    } catch (error) {
+        this.debugLog('❌ خطأ في تحميل الوظائف المزارة:', error);
+    }
+}
+
+async saveVisitedJobs() {
+    try {
+        const visitedArray = Array.from(this.visitedJobs);
+        await chrome.storage.local.set({ visitedJobs: visitedArray });
+        this.debugLog(`💾 تم حفظ ${visitedArray.length} وظيفة مزارة`);
+    } catch (error) {
+        this.debugLog('❌ خطأ في حفظ الوظائف المزارة:', error);
+    }
+}
+
+// 🆕 تسجيل وظيفة كمزارة فور الدخول عليها
+markJobAsVisited(jobCard) {
+    const jobIds = this.generateJobIdentifiers(jobCard);
+    
+    this.debugLog(`📝 تسجيل وظيفة كمزارة: ${jobCard.title}`);
+    
+    // إضافة جميع المعرفات الممكنة
+    for (const id of jobIds) {
+        this.visitedJobs.add(id);
+    }
+    
+    this.debugLog(`🔑 تم حفظ ${jobIds.length} معرف مختلف للوظيفة`);
+    this.debugLog(`📊 إجمالي الوظائف المزارة: ${this.visitedJobs.size}`);
+    
+    // حفظ فوري في التخزين
+    this.saveVisitedJobs();
+}
+
+// 🆕 فحص إذا كانت الوظيفة مزارة سابقاً
+isJobVisited(jobCard) {
+    const jobIds = this.generateJobIdentifiers(jobCard);
+    
+    this.debugLog(`🔍 فحص زيارة الوظيفة: ${jobCard.title}`);
+    
+    // فحص كل معرف ممكن
+    for (const id of jobIds) {
+        if (this.visitedJobs.has(id)) {
+            this.debugLog(`🚫 وظيفة مزارة سابقاً: ${jobCard.title} - ${id.substring(0, 20)}...`);
+            return true;
+        }
+    }
+    
+    this.debugLog(`✅ وظيفة جديدة غير مزارة: ${jobCard.title}`);
+    return false;
+}
+
+// 🆕 توليد معرفات شاملة للوظيفة (أقوى من النظام السابق)
+generateJobIdentifiers(jobCard) {
+    const identifiers = [];
+    
+    try {
+        // 1. معرف URL الأساسي (الأقوى)
+        const urlId = this.getJobUniqueId(jobCard.link);
+        if (urlId) {
+            identifiers.push(urlId);
+            identifiers.push(`url_${urlId}`);
+        }
+        
+        // 2. معرف عنوان الوظيفة
+        const jobTitle = jobCard.title || '';
+        if (jobTitle) {
+            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            identifiers.push(`title_${cleanTitle}`);
+            identifiers.push(jobTitle.toLowerCase());
+            identifiers.push(cleanTitle);
+        }
+        
+        // 3. معرف الشركة + الوظيفة
+        const companyName = this.extractCompanyName(jobCard);
+        if (companyName && jobTitle) {
+            const cleanCompany = companyName.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            const cleanTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            identifiers.push(`job_${cleanTitle}_company_${cleanCompany}`);
+            identifiers.push(`${jobTitle}_${companyName}`.replace(/\s+/g, '_').toLowerCase());
+        }
+        
+        // 4. معرف هاش الرابط
+        if (jobCard.link && jobCard.link.href) {
+            const linkHash = btoa(jobCard.link.href).replace(/[^A-Za-z0-9]/g, '').substring(0, 32);
+            identifiers.push(`link_${linkHash}`);
+        }
+        
+        // 5. معرف احتياطي
+        if (identifiers.length === 0) {
+            const emergencyId = `emergency_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            identifiers.push(emergencyId);
+            this.debugLog(`🚨 استخدام معرف طوارئ: ${emergencyId}`);
+        }
+        
+    } catch (error) {
+        this.debugLog('❌ خطأ في توليد المعرفات:', error);
+        identifiers.push(`error_${Date.now()}`);
+    }
+    
+    return identifiers;
+}
+
+
+// ===============================
+// نظام إدارة الوظائف المرفوضة (محسن)
 // ===============================
 
 async loadRejectedJobs() {
@@ -176,9 +539,42 @@ addJobToRejected(jobCard) {
 
 
 async clearRejectedJobs() {
-    this.rejectedJobs.clear();
-    await chrome.storage.local.remove(['rejectedJobs']);
-    this.debugLog('🗑️ تم مسح جميع الوظائف المرفوضة');
+    if (confirm('هل أنت متأكد من مسح جميع الوظائف المرفوضة؟\n\n⚠️ هذا سيمسح فقط قائمة الوظائف المرفوضة وليس الوظائف المزارة')) {
+        try {
+            this.sendMessageFireAndForget({ action: 'CLEAR_REJECTED_JOBS' });
+            this.showNotification('تم مسح قائمة الوظائف المرفوضة');
+        } catch (error) {
+            console.error('Error clearing rejected jobs:', error);
+            this.showError('خطأ في مسح الوظائف المرفوضة');
+        }
+    }
+}
+
+// 🆕 دالة جديدة لمسح الوظائف المزارة
+async clearVisitedJobs() {
+    if (confirm('هل أنت متأكد من مسح جميع الوظائف المزارة؟\n\n⚠️ هذا سيجعل الإضافة تدخل لجميع الوظائف مرة أخرى!')) {
+        try {
+            this.sendMessageFireAndForget({ action: 'CLEAR_VISITED_JOBS' });
+            this.showNotification('تم مسح قائمة الوظائف المزارة');
+        } catch (error) {
+            console.error('Error clearing visited jobs:', error);
+            this.showError('خطأ في مسح الوظائف المزارة');
+        }
+    }
+}
+
+// 🆕 دالة لمسح جميع بيانات الوظائف
+async clearAllJobData() {
+    if (confirm('هل أنت متأكد من مسح جميع بيانات الوظائف؟\n\n⚠️ هذا سيمسح:\n- الوظائف المزارة\n- الوظائف المرفوضة\n- بيانات الرفض')) {
+        try {
+            this.sendMessageFireAndForget({ action: 'CLEAR_ALL_JOB_DATA' });
+            await chrome.runtime.sendMessage({ action: 'CLEAR_REJECTION_DATA' });
+            this.showNotification('تم مسح جميع بيانات الوظائف');
+        } catch (error) {
+            console.error('Error clearing all job data:', error);
+            this.showError('خطأ في مسح جميع البيانات');
+        }
+    }
 }
 
         // 🔧 نظام التشخيص المتقدم
@@ -1380,13 +1776,41 @@ getAllPossibleSubmitButtons() {
                         this.stopAutomation();
                         break;
                         case 'CLEAR_REJECTED_JOBS':
-    sendResponse({ success: true });
-    this.clearRejectedJobs();
-    break;
-    
-case 'GET_REJECTED_COUNT':
-    sendResponse({ count: this.rejectedJobs.size });
-    break;
+                    await this.clearRejectedJobs();
+                    sendResponse({ success: true });
+                    break;
+
+                case 'GET_REJECTED_COUNT':
+                    sendResponse({ count: this.rejectedJobs.size });
+                    break;
+
+                // 🆕 دعم إدارة الوظائف المزارة
+                case 'CLEAR_VISITED_JOBS':
+                    await this.clearVisitedJobs();
+                    sendResponse({ success: true });
+                    break;
+
+                case 'GET_VISITED_COUNT':
+                    sendResponse({ count: this.visitedJobs.size });
+                    break;
+
+                case 'CLEAR_ALL_JOB_DATA':
+                    await this.clearVisitedJobs();
+                    await this.clearRejectedJobs();
+                    sendResponse({ success: true });
+                    break;
+
+                case 'GET_JOB_STATISTICS':
+                    const stats = {
+                        visitedJobs: this.visitedJobs.size,
+                        rejectedJobs: this.rejectedJobs.size,
+                        appliedJobs: this.stats.applied || 0,
+                        skippedJobs: this.stats.skipped || 0,
+                        totalJobs: this.stats.total || 0
+                    };
+                    sendResponse({ statistics: stats });
+                    break;
+                    
                     default:
                         sendResponse({ success: false, error: 'Unknown action' });
                 }
@@ -2231,7 +2655,7 @@ const jobCards = await this.getJobCards();
 
         // 🚀 تحسين العثور على الوظائف
 getJobCards() {
-    this.debugLog('🔍 البحث عن بطاقات الوظائف مع فلترة ذكية');
+    this.debugLog('🔍 البحث عن بطاقات الوظائف مع فلترة محسنة ضد التكرار');
     
     const jobCards = [];
     
@@ -2251,6 +2675,7 @@ getJobCards() {
     }
     
     let skippedApplied = 0;
+    let skippedVisited = 0;  // 🆕 الأهم - مزارة سابقاً
     let skippedRejected = 0;
     let skippedReview = 0;
     
@@ -2275,14 +2700,21 @@ getJobCards() {
                 continue;
             }
             
-            // **2. فحص قائمة المرفوضة**
+            // **🆕 2. فحص الوظائف المزارة سابقاً (الفحص الأهم!)**
+            if (this.isJobVisited(jobCard)) {
+                skippedVisited++;
+                this.debugLog(`🔄 تخطي مزارة سابقاً: ${jobTitle}`);
+                continue;
+            }
+            
+            // **3. فحص قائمة المرفوضة (للإحصائيات فقط)**
             if (this.isJobRejected(jobCard)) {
                 skippedRejected++;
                 this.debugLog(`🚫 تخطي مرفوضة سابقاً: ${jobTitle}`);
                 continue;
             }
             
-            // **3. فحص "استعراض طلب التقديم"**
+            // **4. فحص "استعراض طلب التقديم"**
             const hasReviewText = jobContainer.textContent.includes('استعراض طلب التقديم') ||
                                  jobContainer.textContent.includes('استعراض الطلب');
             
@@ -2292,15 +2724,16 @@ getJobCards() {
                 continue;
             }
             
-            // **4. وظيفة صالحة للتقديم**
+            // **5. وظيفة جديدة صالحة للمعالجة**
             jobCards.push(jobCard);
-            this.debugLog(`✅ وظيفة متاحة: ${jobTitle}`);
+            this.debugLog(`🆕 وظيفة جديدة قابلة للمعالجة: ${jobTitle}`);
         }
     }
 
-    this.debugLog(`📊 نتائج الفلترة:
-        - وظائف متاحة: ${jobCards.length}
+    this.debugLog(`📊 نتائج الفلترة المحسنة:
+        - وظائف جديدة متاحة: ${jobCards.length}
         - متخطاة (مقدم عليها): ${skippedApplied}
+        - متخطاة (مزارة سابقاً): ${skippedVisited} 🆕 الأهم
         - متخطاة (مرفوضة سابقاً): ${skippedRejected}
         - متخطاة (قيد المراجعة): ${skippedReview}
         - إجمالي الروابط: ${jobLinks.length}`);
@@ -2448,21 +2881,25 @@ getJobCards() {
             return false;
         }
 
-        async processJob(jobCard, jobIndex) {
-            const jobTitle = jobCard.title;
-            this.debugLog(`🎯 معالجة الوظيفة ${jobIndex}: ${jobTitle}`);
-            
-            this.sendMessage('UPDATE_CURRENT_JOB', { 
-                jobTitle: jobTitle, 
-                status: 'processing' 
-            });
+async processJob(jobCard, jobIndex) {
+    const jobTitle = jobCard.title;
+    this.debugLog(`🎯 معالجة الوظيفة ${jobIndex}: ${jobTitle}`);
+    
+    // 🆕 تسجيل الوظيفة كمزارة فور البدء (الأهم!)
+    this.markJobAsVisited(jobCard);
+    this.debugLog(`✅ تم تسجيل الوظيفة كمزارة - لن تتكرر مرة أخرى`);
+    
+    this.sendMessage('UPDATE_CURRENT_JOB', { 
+        jobTitle: jobTitle, 
+        status: 'processing' 
+    });
 
-            this.highlightElement(jobCard.link);
+    this.highlightElement(jobCard.link);
 
-            this.debugLog('👆 النقر على رابط الوظيفة:', jobCard.link.href);
-            const currentUrl = window.location.href;
-            const clickSuccess = await this.clickElementAdaptive(jobCard.link);
-            
+    this.debugLog('👆 النقر على رابط الوظيفة:', jobCard.link.href);
+    const currentUrl = window.location.href;
+    const clickSuccess = await this.clickElementAdaptive(jobCard.link);
+    
             if (!clickSuccess) {
                 throw new Error('فشل في النقر على رابط الوظيفة');
             }

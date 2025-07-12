@@ -181,9 +181,33 @@
                         مسح البيانات
                     </button>
                     <button class="btn btn-danger" id="clearRejectedJobsBtn" disabled>
-    <span class="btn-icon">🚫</span>
-    مسح الوظائف المرفوضة
-</button>
+                        <span class="btn-icon">🚫</span>
+                        مسح الوظائف المرفوضة
+                    </button>
+                </div>
+
+                <!-- 🆕 قسم إدارة الوظائف المزارة -->
+                <div class="section">
+                    <div class="section-header">
+                        <span class="section-icon">🔄</span>
+                        <h2>إدارة الوظائف المزارة</h2>
+                        <span class="feature-badge">محسن</span>
+                    </div>
+
+                    <div class="rejection-buttons">
+                        <button class="btn btn-warning" id="clearVisitedJobsBtn" disabled>
+                            <span class="btn-icon">🔄</span>
+                            مسح الوظائف المزارة
+                        </button>
+                        <button class="btn btn-danger" id="clearAllJobDataBtn" disabled>
+                            <span class="btn-icon">🗑️</span>
+                            مسح جميع البيانات
+                        </button>
+                    </div>
+
+                    <div class="rejection-info" id="visitedJobsInfo">
+                        <span class="info-text">لا توجد وظائف مزارة بعد</span>
+                    </div>
                 </div>
 
                 <div class="rejection-info" id="rejectionInfo">
