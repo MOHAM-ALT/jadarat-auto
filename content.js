@@ -2632,12 +2632,15 @@ extractCompanyName(jobCard) {
         
         if (cardElement) {
             // طريقة 1: البحث عن الشركة في بداية البطاقة
-            const companyElement = cardElement.querySelector('div[data-container] a[data-link] span[data-expression]');
-            if (companyElement && companyElement.textContent.trim()) {
-                const companyName = companyElement.textContent.trim();
-                this.debugLog(`🏢 وجد اسم الشركة (طريقة 1): ${companyName}`);
-                return companyName;
-            }
+           // طريقة 1: البحث عن الشركة في بداية البطاقة (تجنب عنوان الوظيفة)
+const companyElements = cardElement.querySelectorAll('div[data-container] a[data-link] span[data-expression]');
+for (const element of companyElements) {
+    const text = element.textContent?.trim();
+    if (text && text !== jobCard.title && text.length > 3) {
+        this.debugLog(`🏢 وجد اسم الشركة (طريقة 1): ${text}`);
+        return text;
+    }
+}
             
             // طريقة 2: البحث في جميع النصوص لإيجاد أنماط الشركات
             const allSpans = Array.from(cardElement.querySelectorAll('span[data-expression]'));
