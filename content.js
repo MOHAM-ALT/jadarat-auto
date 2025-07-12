@@ -1811,39 +1811,7 @@ findElementsByText(selector) {
             
             return results;
         }
-handleApplicationResult(result, jobTitle, jobCard) {
-    if (result.success) {
-        this.stats.applied++;
-        this.sendMessage('UPDATE_CURRENT_JOB', { 
-            jobTitle: jobTitle, 
-            status: 'success' 
-        });
-        this.debugLog('✅ تم التقديم بنجاح');
-        
-    } else if (result.type === 'rejection') {
-        this.stats.rejected = (this.stats.rejected || 0) + 1;
-        
-        // **حفظ الوظيفة في قائمة المرفوضة**
-        this.addJobToRejected(jobCard);
-        
-        this.saveRejectionData(jobTitle, result.reason);
-        this.sendMessage('UPDATE_CURRENT_JOB', { 
-            jobTitle: jobTitle, 
-            status: 'rejected',
-            reason: result.reason
-        });
-        this.debugLog('❌ تم رفض التقديم وحفظ في قائمة المرفوضة:', result.reason);
-        
-    } else {
-        this.stats.skipped++;
-        this.sendMessage('UPDATE_CURRENT_JOB', { 
-            jobTitle: jobTitle, 
-            status: 'error',
-            reason: result.reason
-        });
-        this.debugLog('⚠️ فشل التقديم:', result.reason);
-    }
-}
+
 
         async saveRejectionData(jobTitle, rejectionReason) {
             try {
@@ -2566,25 +2534,65 @@ getJobCards() {
             
             const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
             
-            if (alreadyApplied) {
-                this.stats.skipped++;
-                this.sendMessage('UPDATE_CURRENT_JOB', { 
-                    jobTitle: jobTitle, 
-                    status: 'skipped' 
-                });
-                this.debugLog('⏭️ مقدم عليها مسبقاً');
-            } else {
-                const result = await this.applyForJobImproved();
-                this.handleApplicationResult(result, jobTitle);
+if (alreadyApplied) {
+    this.stats.skipped++;
+    this.sendMessage('UPDATE_CURRENT_JOB', { 
+        jobTitle: jobTitle, 
+        status: 'skipped' 
+    });
+    this.debugLog('⏭️ مقدم عليها مسبقاً');
+} else {
+    const applicationResult = await this.applyForJobImproved();
+    this.debugLog('📊 نتيجة التقديم:', applicationResult);
+
+    // معالجة النتيجة مباشرة
+    if (applicationResult && (applicationResult.success || applicationResult.type === 'rejection')) {
+        if (applicationResult.success) {
+            this.stats.applied++;
+            this.sendMessage('UPDATE_CURRENT_JOB', { 
+                jobTitle: jobTitle, 
+                status: 'success' 
+            });
+            this.debugLog('✅ تم التقديم بنجاح');
+            
+        } else if (applicationResult.type === 'rejection') {
+            this.stats.rejected = (this.stats.rejected || 0) + 1;
+            
+            // حفظ الوظيفة المرفوضة
+            const jobParam = this.getJobUniqueId(jobCard.link);
+            
+            if (jobParam) {
+                this.rejectedJobs.add(jobParam);
+                this.saveRejectedJobs();
+                this.debugLog(`🚫 تم حفظ وظيفة مرفوضة: ${jobTitle} - ${jobParam.substring(0, 15)}...`);
             }
+            
+            // حفظ بيانات الرفض للتصدير
+            this.saveRejectionData(jobTitle, applicationResult.reason);
+            
+            this.sendMessage('UPDATE_CURRENT_JOB', { 
+                jobTitle: jobTitle, 
+                status: 'rejected',
+                reason: applicationResult.reason
+            });
+            this.debugLog('❌ تم رفض التقديم وحفظ في قائمة المرفوضة:', applicationResult.reason);
+        }
+    } else {
+        this.debugLog('⚠️ لم يتم التقديم بشكل صحيح، تسجيل كتخطي');
+        this.stats.skipped++;
+        this.sendMessage('UPDATE_CURRENT_JOB', { 
+            jobTitle: jobTitle, 
+            status: 'skipped',
+            reason: 'فشل في التقديم'
+        });
+    }
+}
 
-            this.stats.total++;
-            this.sendMessage('UPDATE_STATS', { stats: this.stats });
+this.stats.total++;
+this.sendMessage('UPDATE_STATS', { stats: this.stats });
 
-            await this.goBackToJobList();
-            this.currentJobIndex = jobIndex; // تحديث الفهرس الحالي
-    
-    await this.goBackToJobList();
+await this.goBackToJobList();
+this.currentJobIndex = jobIndex; // تحديث الفهرس الحالي
         }
 
         highlightElement(element) {
