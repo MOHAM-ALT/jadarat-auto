@@ -173,37 +173,7 @@ addJobToRejected(jobCard) {
     }
 }
 
-isJobRejected(jobCard) {
-    const jobLink = jobCard.link;
-    
-    this.debugLog(`🔍 فحص رفض الوظيفة: ${jobCard.title}`);
-    
-    // الطريقة الأساسية: استخراج المعرف
-    let jobParam = null;
-    
-    if (jobLink && jobLink.href) {
-        jobParam = this.getJobUniqueId(jobLink);
-    }
-    
-    // فحص المعرف الأساسي
-    if (jobParam && this.rejectedJobs.has(jobParam)) {
-        this.debugLog(`🚫 وظيفة مرفوضة سابقاً (معرف): ${jobCard.title} - ${jobParam.substring(0, 15)}...`);
-        return true;
-    }
-    
-    // فحص بديل: العنوان فقط (للحالات الطارئة)
-    if (jobCard.title) {
-        const titleId = `title_${btoa(jobCard.title).replace(/[^A-Za-z0-9]/g, '').substring(0, 20)}`;
-        
-        if (this.rejectedJobs.has(titleId)) {
-            this.debugLog(`🚫 وظيفة مرفوضة سابقاً (عنوان): ${jobCard.title}`);
-            return true;
-        }
-    }
-    
-    this.debugLog(`✅ وظيفة غير مرفوضة: ${jobCard.title}`);
-    return false;
-}
+
 
 async clearRejectedJobs() {
     this.rejectedJobs.clear();
@@ -2558,14 +2528,30 @@ if (alreadyApplied) {
         } else if (applicationResult.type === 'rejection') {
             this.stats.rejected = (this.stats.rejected || 0) + 1;
             
-            // حفظ الوظيفة المرفوضة
+            // حفظ الوظيفة المرفوضة بطريقة متعددة ومحسنة
             const jobParam = this.getJobUniqueId(jobCard.link);
-            
+
+            // طريقة 1: المعرف الأساسي من URL
             if (jobParam) {
                 this.rejectedJobs.add(jobParam);
-                this.saveRejectedJobs();
-                this.debugLog(`🚫 تم حفظ وظيفة مرفوضة: ${jobTitle} - ${jobParam.substring(0, 15)}...`);
+                this.debugLog(`🚫 تم حفظ وظيفة مرفوضة (معرف URL): ${jobTitle} - ${jobParam.substring(0, 15)}...`);
             }
+
+            // طريقة 2: معرف احتياطي (العنوان + الشركة)
+            const companyName = this.extractCompanyName(jobCard);
+            const cleanJobTitle = jobTitle.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            const cleanCompanyName = companyName.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+            const fallbackId = `job_${cleanJobTitle}_company_${cleanCompanyName}`;
+
+            this.rejectedJobs.add(fallbackId);
+            this.debugLog(`🚫 تم حفظ وظيفة مرفوضة (احتياطي): ${jobTitle} | ${companyName}`);
+            this.debugLog(`🔑 معرف احتياطي: ${fallbackId}`);
+
+            // طريقة 3: معرف إضافي للعنوان فقط (للحالات الطارئة)
+            const titleOnlyId = `title_only_${cleanJobTitle}`;
+            this.rejectedJobs.add(titleOnlyId);
+
+            this.saveRejectedJobs();
             
             // حفظ بيانات الرفض للتصدير
             this.saveRejectionData(jobTitle, applicationResult.reason);
@@ -2592,8 +2578,8 @@ this.stats.total++;
 this.sendMessage('UPDATE_STATS', { stats: this.stats });
 
 await this.goBackToJobList();
-this.currentJobIndex = jobIndex; // تحديث الفهرس الحالي
-        }
+this.currentJobIndex = jobIndex; 
+}// تحديث الفهرس الحالي        
 
         highlightElement(element) {
             if (element) {
@@ -2637,7 +2623,103 @@ this.currentJobIndex = jobIndex; // تحديث الفهرس الحالي
                 this.showIndicator('🎉 تم الانتهاء من جميع الوظائف!', '#00ff88', 10000);
             }
         }
+extractCompanyName(jobCard) {
+    try {
+        this.debugLog(`🔍 استخراج اسم الشركة للوظيفة: ${jobCard.title}`);
+        
+        // البحث عن العنصر الحاوي للبطاقة
+        const cardElement = jobCard.link.closest('[data-container]');
+        
+        if (cardElement) {
+            // طريقة 1: البحث عن الشركة في بداية البطاقة
+            const companyElement = cardElement.querySelector('div[data-container] a[data-link] span[data-expression]');
+            if (companyElement && companyElement.textContent.trim()) {
+                const companyName = companyElement.textContent.trim();
+                this.debugLog(`🏢 وجد اسم الشركة (طريقة 1): ${companyName}`);
+                return companyName;
+            }
+            
+            // طريقة 2: البحث في جميع النصوص لإيجاد أنماط الشركات
+            const allSpans = Array.from(cardElement.querySelectorAll('span[data-expression]'));
+            
+            for (const span of allSpans) {
+                const text = span.textContent?.trim();
+                if (text && text !== jobCard.title && text.length > 5) {
+                    // تحقق من وجود كلمات مفتاحية للشركات
+                    const companyPatterns = [
+                        /مؤسسة.*/, /شركة.*/, /مكتب.*/, /مجموعة.*/, 
+                        /.*للاستشارات.*/, /.*للخدمات.*/, /.*للتطوير.*/,
+                        /.*هندسية.*/, /.*تجارية.*/, /.*صناعية.*/
+                    ];
+                    
+                    if (companyPatterns.some(pattern => pattern.test(text))) {
+                        this.debugLog(`🏢 وجد اسم الشركة (طريقة 2): ${text}`);
+                        return text;
+                    }
+                }
+            }
+            
+            // طريقة 3: أخذ أول نص ليس عنوان الوظيفة
+            for (const span of allSpans) {
+                const text = span.textContent?.trim();
+                if (text && text !== jobCard.title && text.length > 3 && 
+                    !text.includes('%') && !text.match(/^\d+$/)) {
+                    this.debugLog(`🏢 وجد اسم الشركة (طريقة 3): ${text}`);
+                    return text;
+                }
+            }
+        }
+        
+        // طريقة 4: استخراج من معرف URL كبديل أخير
+        const urlParam = this.getJobUniqueId(jobCard.link);
+        if (urlParam) {
+            const companyId = `company_${urlParam.substring(0, 10)}`;
+            this.debugLog(`🏢 استخدام معرف URL كشركة: ${companyId}`);
+            return companyId;
+        }
+        
+        this.debugLog(`⚠️ لم يتم العثور على اسم الشركة، استخدام default`);
+        return 'unknown_company';
+        
+    } catch (error) {
+        this.debugLog('❌ خطأ في استخراج اسم الشركة:', error);
+        return `error_company_${Date.now()}`;
+    }
+}
 
+isJobRejected(jobCard) {
+    const jobLink = jobCard.link;
+    
+    this.debugLog(`🔍 فحص رفض الوظيفة: ${jobCard.title}`);
+    
+    // فحص 1: المعرف الأساسي من URL
+    const jobParam = this.getJobUniqueId(jobLink);
+    if (jobParam && this.rejectedJobs.has(jobParam)) {
+        this.debugLog(`🚫 وظيفة مرفوضة سابقاً (معرف URL): ${jobCard.title}`);
+        return true;
+    }
+    
+    // فحص 2: المعرف الاحتياطي (العنوان + الشركة)
+    const companyName = this.extractCompanyName(jobCard);
+    const cleanJobTitle = jobCard.title.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+    const cleanCompanyName = companyName.replace(/[^\w\u0600-\u06FF]/g, '').toLowerCase();
+    const fallbackId = `job_${cleanJobTitle}_company_${cleanCompanyName}`;
+    
+    if (this.rejectedJobs.has(fallbackId)) {
+        this.debugLog(`🚫 وظيفة مرفوضة سابقاً (احتياطي): ${jobCard.title} | ${companyName}`);
+        return true;
+    }
+    
+    // فحص 3: العنوان فقط (للحالات الطارئة)
+    const titleOnlyId = `title_only_${cleanJobTitle}`;
+    if (this.rejectedJobs.has(titleOnlyId)) {
+        this.debugLog(`🚫 وظيفة مرفوضة سابقاً (عنوان فقط): ${jobCard.title}`);
+        return true;
+    }
+    
+    this.debugLog(`✅ وظيفة غير مرفوضة: ${jobCard.title} | ${companyName}`);
+    return false;
+}
         async navigateToJobList() {
             this.debugLog('🔄 الانتقال لقائمة الوظائف');
             
