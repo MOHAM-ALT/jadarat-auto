@@ -636,6 +636,12 @@ if (window.jadaratAutoContentLoaded) {
             const jobTitle = jobCard.title;
             this.debugLog(`🎯 معالجة الوظيفة ${jobIndex}: ${jobTitle}`);
             
+            // فحص الإيقاف قبل البدء
+            if (!this.isRunning || this.isPaused) {
+                this.debugLog('🛑 تم إيقاف العملية قبل معالجة الوظيفة');
+                return;
+            }
+            
             this.markJobAsVisited(jobCard);
             
             this.sendMessage('UPDATE_CURRENT_JOB', { 
@@ -647,9 +653,30 @@ if (window.jadaratAutoContentLoaded) {
             const currentUrl = window.location.href;
             
             await this.clickElementBasic(jobCard.link);
+            
+            // فحص الإيقاف بعد النقر
+            if (!this.isRunning || this.isPaused) {
+                this.debugLog('🛑 تم إيقاف العملية بعد النقر');
+                return;
+            }
+            
             await this.waitForNavigation(currentUrl);
+            
+            // فحص الإيقاف بعد التنقل
+            if (!this.isRunning || this.isPaused) {
+                this.debugLog('🛑 تم إيقاف العملية بعد التنقل');
+                return;
+            }
+            
             await this.waitForJobDetailsToLoad();
             await this.handlePopups();
+            
+            // فحص الإيقاف قبل التقديم
+            if (!this.isRunning || this.isPaused) {
+                this.debugLog('🛑 تم إيقاف العملية قبل التقديم');
+                await this.goBackToJobListSafe();
+                return;
+            }
             
             const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
             
@@ -660,6 +687,13 @@ if (window.jadaratAutoContentLoaded) {
                     status: 'skipped' 
                 });
             } else {
+                // فحص الإيقاف قبل التقديم
+                if (!this.isRunning || this.isPaused) {
+                    this.debugLog('🛑 تم إيقاف العملية قبل بدء التقديم');
+                    await this.goBackToJobListSafe();
+                    return;
+                }
+                
                 const applicationResult = await this.applyForJobBasic();
                 
                 if (applicationResult && applicationResult.success) {
@@ -693,11 +727,19 @@ if (window.jadaratAutoContentLoaded) {
 
             this.stats.total++;
             this.sendMessage('UPDATE_STATS', { stats: this.stats });
-            await this.goBackToJobList();
+            
+            // العودة الآمنة للقائمة
+            await this.goBackToJobListSafe();
         }
 
         async processCurrentJobDetails() {
             try {
+                // فحص الإيقاف في البداية
+                if (!this.isRunning || this.isPaused) {
+                    this.debugLog('🛑 تم إيقاف العملية قبل معالجة تفاصيل الوظيفة');
+                    return { completed: false, error: 'تم إيقاف العملية' };
+                }
+                
                 const jobTitle = this.extractCurrentJobTitle();
                 
                 this.sendMessage('UPDATE_CURRENT_JOB', { 
@@ -706,6 +748,13 @@ if (window.jadaratAutoContentLoaded) {
                 });
 
                 await this.handlePopups();
+                
+                // فحص الإيقاف بعد التعامل مع النوافذ المنبثقة
+                if (!this.isRunning || this.isPaused) {
+                    this.debugLog('🛑 تم إيقاف العملية بعد التعامل مع النوافذ المنبثقة');
+                    return { completed: false, error: 'تم إيقاف العملية' };
+                }
+                
                 const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
                 
                 if (alreadyApplied) {
@@ -715,6 +764,12 @@ if (window.jadaratAutoContentLoaded) {
                         status: 'skipped' 
                     });
                 } else {
+                    // فحص الإيقاف قبل التقديم
+                    if (!this.isRunning || this.isPaused) {
+                        this.debugLog('🛑 تم إيقاف العملية قبل التقديم');
+                        return { completed: false, error: 'تم إيقاف العملية' };
+                    }
+                    
                     const applicationResult = await this.applyForJobBasic();
                     
                     if (applicationResult && applicationResult.success) {
@@ -750,24 +805,55 @@ if (window.jadaratAutoContentLoaded) {
             this.debugLog('📝 بدء عملية التقديم');
             
             try {
+                // فحص الإيقاف قبل البحث عن الزر
+                if (!this.isRunning || this.isPaused) {
+                    this.debugLog('🛑 تم إيقاف العملية قبل البحث عن زر التقديم');
+                    return { success: false, reason: 'تم إيقاف العملية' };
+                }
+                
                 const submitButton = this.findSubmitButton();
                 if (!submitButton) {
                     this.debugLog('❌ لم يتم العثور على زر التقديم');
                     return { success: false, reason: 'لم يوجد زر التقديم' };
                 }
                 
+                // فحص الإيقاف قبل النقر على زر التقديم
+                if (!this.isRunning || this.isPaused) {
+                    this.debugLog('🛑 تم إيقاف العملية قبل النقر على زر التقديم');
+                    return { success: false, reason: 'تم إيقاف العملية' };
+                }
+                
                 this.debugLog('🎯 النقر على زر التقديم');
                 await this.clickElementBasic(submitButton);
                 await this.wait(3000);
                 
+                // فحص الإيقاف بعد النقر
+                if (!this.isRunning || this.isPaused) {
+                    this.debugLog('🛑 تم إيقاف العملية بعد النقر على زر التقديم');
+                    return { success: false, reason: 'تم إيقاف العملية' };
+                }
+                
                 const confirmModal = this.findConfirmationModal();
                 if (confirmModal) {
                     this.debugLog('📋 معالجة نافذة التأكيد');
+                    
+                    // فحص الإيقاف قبل التأكيد
+                    if (!this.isRunning || this.isPaused) {
+                        this.debugLog('🛑 تم إيقاف العملية قبل التأكيد');
+                        return { success: false, reason: 'تم إيقاف العملية' };
+                    }
+                    
                     const confirmButton = this.findButtonInModal(confirmModal, ['تقديم', 'تأكيد']);
                     if (confirmButton) {
                         await this.clickElementBasic(confirmButton);
                         await this.wait(3000);
                     }
+                }
+                
+                // فحص الإيقاف قبل فحص النتيجة
+                if (!this.isRunning || this.isPaused) {
+                    this.debugLog('🛑 تم إيقاف العملية قبل فحص النتيجة');
+                    return { success: false, reason: 'تم إيقاف العملية' };
                 }
                 
                 const result = this.checkApplicationResult();
@@ -1033,6 +1119,33 @@ if (window.jadaratAutoContentLoaded) {
             }
             
             return false;
+        }
+
+        async goBackToJobListSafe() {
+            this.debugLog('🔙 العودة الآمنة لقائمة الوظائف');
+            
+            // التحقق من نوع الصفحة الحالية
+            const currentUrl = window.location.href;
+            
+            // إذا كنا بالفعل في قائمة الوظائف، لا نفعل شيئاً
+            if (currentUrl.includes('ExploreJobs') || currentUrl.includes('JobTab=1')) {
+                this.debugLog('✅ نحن بالفعل في قائمة الوظائف - لا حاجة للرجوع');
+                return;
+            }
+            
+            // إذا كنا في صفحة تفاصيل الوظيفة، نرجع
+            if (currentUrl.includes('JobDetails')) {
+                this.debugLog('📄 في صفحة تفاصيل - العودة للقائمة');
+                window.history.back();
+                await this.wait(3000);
+                await this.waitForJobsToLoad();
+            } else {
+                // في صفحة غير متوقعة، انتقال مباشر
+                this.debugLog('⚠️ صفحة غير متوقعة - انتقال مباشر لقائمة الوظائف');
+                window.location.href = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
+                await this.wait(5000);
+                await this.waitForJobsToLoad();
+            }
         }
 
         async goBackToJobList() {
