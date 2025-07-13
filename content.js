@@ -329,6 +329,8 @@ if (window.jadaratAutoContentLoaded) {
             this.debugLog('🔍 البحث عن بطاقات الوظائف');
             
             const jobCards = [];
+            const processedTitles = new Set(); // لتجنب التكرار
+            
             const selectors = [
                 'a[data-link][href*="/Jadarat/JobDetails"]',
                 'a[href*="JobDetails"]',
@@ -345,10 +347,20 @@ if (window.jadaratAutoContentLoaded) {
             }
             
             let skippedCount = 0;
+            let duplicateCount = 0;
             
             for (const link of jobLinks) {
                 const jobTitle = this.getJobTitle(link);
                 const jobContainer = this.findJobContainer(link);
+                
+                // تجنب التكرار في نفس الصفحة
+                if (processedTitles.has(jobTitle)) {
+                    duplicateCount++;
+                    this.debugLog(`🔄 تخطي مكرر في الصفحة: ${jobTitle}`);
+                    continue;
+                }
+                
+                processedTitles.add(jobTitle);
                 
                 if (jobContainer) {
                     const jobCard = {
@@ -386,7 +398,7 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
 
-            this.debugLog(`📊 النتيجة: ${jobCards.length} متاحة، ${skippedCount} متخطاة`);
+            this.debugLog(`📊 النتيجة: ${jobCards.length} متاحة، ${skippedCount} متخطاة، ${duplicateCount} مكررة`);
             return jobCards;
         }
 
@@ -1067,15 +1079,69 @@ if (window.jadaratAutoContentLoaded) {
 
             this.debugLog(`🎯 النقر على: ${element.tagName}`);
             
-            if (element.offsetWidth === 0 || element.offsetHeight === 0) {
-                throw new Error('العنصر غير مرئي');
+            // التحقق المحسن من الرؤية
+            const rect = element.getBoundingClientRect();
+            const isActuallyVisible = rect.width > 0 && rect.height > 0 && 
+                                    element.offsetWidth > 0 && element.offsetHeight > 0 &&
+                                    window.getComputedStyle(element).visibility !== 'hidden' &&
+                                    window.getComputedStyle(element).display !== 'none';
+
+            if (!isActuallyVisible) {
+                this.debugLog('⚠️ العنصر غير مرئي، محاولة إعادة العثور عليه...');
+                
+                // إذا كان رابط وظيفة، حاول إعادة العثور عليه
+                if (element.tagName === 'A' && element.href && element.href.includes('JobDetails')) {
+                    const jobTitle = element.textContent?.trim() || 'غير محدد';
+                    this.debugLog(`🔍 البحث عن رابط للوظيفة: ${jobTitle}`);
+                    
+                    // البحث عن نفس الرابط في الصفحة
+                    const allJobLinks = document.querySelectorAll('a[href*="JobDetails"]');
+                    for (const link of allJobLinks) {
+                        if (link.textContent?.trim() === jobTitle || link.href === element.href) {
+                            const linkRect = link.getBoundingClientRect();
+                            if (linkRect.width > 0 && linkRect.height > 0) {
+                                this.debugLog('✅ وجد رابط بديل مرئي');
+                                element = link;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // إذا ما زال غير مرئي، رمي خطأ
+                const finalRect = element.getBoundingClientRect();
+                if (finalRect.width === 0 || finalRect.height === 0) {
+                    throw new Error('العنصر غير مرئي');
+                }
             }
 
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await this.wait(1000);
-            
-            element.click();
-            await this.wait(2000);
+            // التمرير للعنصر مع انتظار إضافي
+            element.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center',
+                inline: 'center'
+            });
+            await this.wait(1500); // انتظار أطول للتمرير
+
+            // النقر مع معالجة محسنة
+            try {
+                element.click();
+                this.debugLog('✅ تم النقر بنجاح');
+                await this.wait(2000);
+            } catch (error) {
+                this.debugLog('❌ فشل النقر العادي، محاولة بديلة...');
+                
+                // محاولة بديلة
+                const event = new MouseEvent('click', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    button: 0
+                });
+                element.dispatchEvent(event);
+                this.debugLog('✅ نجح النقر البديل');
+                await this.wait(2000);
+            }
         }
 
         async handlePopups() {
