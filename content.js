@@ -274,22 +274,6 @@ generateJobIdentifiers(jobCard) {
     }
 }
 
-// دالة مساعدة لتنظيف النصوص
-cleanTextForId(text) {
-    if (!text || typeof text !== 'string') return '';
-    
-    return text
-        .trim()
-        .replace(/[^\w\u0600-\u06FF]/g, '_')  // استبدال الرموز بـ _
-        .replace(/_+/g, '_')                  // دمج _ المتكررة
-        .replace(/^_|_$/g, '')                // إزالة _ من البداية والنهاية
-        .toLowerCase();
-}
-
-
-// ===============================
-// نظام إدارة الوظائف المرفوضة (محسن)
-// ===============================
 
 // ===============================
 // 🆕 نظام إدارة الوظائف المزارة
@@ -2998,98 +2982,6 @@ this.currentJobIndex = jobIndex; // تحديث الفهرس الحالي
                 this.showIndicator('🎉 تم الانتهاء من جميع الوظائف!', '#00ff88', 10000);
             }
         }
-extractCompanyName(jobCard) {
-    try {
-        this.debugLog(`🔍 استخراج محسن لاسم الشركة: ${jobCard.title}`);
-        
-        const cardElement = jobCard.link.closest('[data-container]');
-        if (!cardElement) {
-            this.debugLog('❌ لم يوجد عنصر data-container');
-            return 'no_container';
-        }
-
-        // طريقة 1: البحث عن أول رابط يحتوي على اسم شركة (قبل رابط الوظيفة)
-        const allLinks = cardElement.querySelectorAll('a[data-link]');
-        for (let i = 0; i < allLinks.length; i++) {
-            const link = allLinks[i];
-            
-            // تجاهل رابط الوظيفة نفسها
-            if (link === jobCard.link || link.href?.includes('JobDetails')) {
-                continue;
-            }
-            
-            const span = link.querySelector('span[data-expression]');
-            if (span) {
-                const companyText = span.textContent?.trim();
-                if (companyText && companyText !== jobCard.title && companyText.length > 5) {
-                    this.debugLog(`🏢 وجد اسم الشركة (رابط منفصل): ${companyText}`);
-                    return companyText;
-                }
-            }
-        }
-
-        // طريقة 2: البحث في أول span قبل عنوان الوظيفة
-        const allSpans = Array.from(cardElement.querySelectorAll('span[data-expression]'));
-        const jobTitleIndex = allSpans.findIndex(span => 
-            span.textContent?.trim() === jobCard.title
-        );
-
-        if (jobTitleIndex > 0) {
-            // أخذ أول span قبل عنوان الوظيفة
-            for (let i = 0; i < jobTitleIndex; i++) {
-                const text = allSpans[i].textContent?.trim();
-                if (text && text.length > 5 && !text.includes('%') && !text.match(/^\d+$/)) {
-                    this.debugLog(`🏢 وجد اسم الشركة (ترتيب span): ${text}`);
-                    return text;
-                }
-            }
-        }
-
-        // طريقة 3: البحث بالكلمات المفتاحية للشركات
-        for (const span of allSpans) {
-            const text = span.textContent?.trim();
-            if (text && text !== jobCard.title && text.length > 5) {
-                const companyKeywords = [
-                    'مؤسسة', 'شركة', 'مكتب', 'مجموعة', 'مركز',
-                    'للاستشارات', 'للخدمات', 'للتطوير', 'للتقنية',
-                    'هندسية', 'تجارية', 'صناعية', 'طبية'
-                ];
-                
-                const hasCompanyKeyword = companyKeywords.some(keyword => 
-                    text.includes(keyword)
-                );
-                
-                if (hasCompanyKeyword) {
-                    this.debugLog(`🏢 وجد اسم الشركة (كلمة مفتاحية): ${text}`);
-                    return text;
-                }
-            }
-        }
-
-        // طريقة 4: أخذ أطول نص ليس عنوان الوظيفة
-        let longestText = '';
-        for (const span of allSpans) {
-            const text = span.textContent?.trim();
-            if (text && text !== jobCard.title && text.length > longestText.length && 
-                text.length > 5 && !text.includes('%') && !text.match(/^\d+$/)) {
-                longestText = text;
-            }
-        }
-
-        if (longestText) {
-            this.debugLog(`🏢 وجد اسم الشركة (أطول نص): ${longestText}`);
-            return longestText;
-        }
-
-        // فشل في استخراج اسم الشركة
-        this.debugLog(`⚠️ فشل في استخراج اسم الشركة للوظيفة: ${jobCard.title}`);
-        return `unknown_company_${Date.now()}`;
-        
-    } catch (error) {
-        this.debugLog('❌ خطأ في استخراج اسم الشركة:', error);
-        return `error_company_${Date.now()}`;
-    }
-}
 
 // 🆕 دالة شاملة لاستخراج جميع بيانات الوظيفة من HTML
 extractJobDataFromHTML(jobCard) {
@@ -3198,16 +3090,6 @@ extractJobDataFromHTML(jobCard) {
 }
 
 // دالة مساعدة للحصول على بيانات أساسية في حالة الفشل
-getMinimalJobData(jobCard) {
-    return {
-        title: jobCard.title || 'unknown_job',
-        company: 'unknown_company',
-        city: null,
-        matchingScore: null,
-        publishDate: null,
-        availableJobs: null
-    };
-}
 
 isJobRejected(jobCard) {
     this.debugLog(`🔍 فحص رفض الوظيفة: ${jobCard.title}`);
