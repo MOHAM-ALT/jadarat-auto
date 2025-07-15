@@ -15,13 +15,6 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["https://jadarat.sa/*"],
-      "js": ["content.js"],
-      "run_at": "document_end"
-    }
-  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "جدارات أوتو",

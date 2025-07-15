@@ -286,40 +286,69 @@ async sendMessageWithTimeout(message, timeoutMs = 5000) {
     });
 }
 
-async injectContentScript() {
-    try {
-        console.log('💉 حقن content script...');
-        
-        await chrome.scripting.executeScript({
-            target: { tabId: this.currentTab.id },
-            files: ['content.js']
-        });
+async establishConnection() {
+    console.log('📡 محاولة تأسيس الاتصال البسيط...');
+    
+    this.isConnected = false;
+    this.connectionAttempts = 0;
+    
+    for (let attempt = 1; attempt <= this.maxConnectionAttempts; attempt++) {
+        try {
+            console.log(`🔄 محاولة الاتصال ${attempt}/${this.maxConnectionAttempts}`);
+            this.updateConnectionDetails(`محاولة ${attempt}/${this.maxConnectionAttempts}...`);
 
-        console.log('✅ تم حقن content script');
-        await this.delay(3000); // انتظار التحميل
-
-    } catch (error) {
-        console.error('❌ فشل في حقن content script:', error);
-        throw new Error(`فشل في حقن content script: ${error.message}`);
-    }
-}
-
-async forceReloadContentScript() {
-    try {
-        console.log('🔄 إعادة تحميل content script بالقوة...');
-        
-        // محاولة إزالة content script القديم
-        await chrome.scripting.executeScript({
-            target: { tabId: this.currentTab.id },
-            func: () => {
-                if (window.jadaratAutoContentLoaded) {
-                    window.jadaratAutoContentLoaded = false;
-                    window.jadaratAutoContent = null;
+            // التأكد من صحة التبويب
+            if (!this.currentTab || !this.currentTab.id) {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                this.currentTab = tab;
+                
+                if (!tab || !tab.url || !tab.url.includes('jadarat.sa')) {
+                    throw new Error('يرجى الانتقال إلى موقع جدارات');
                 }
             }
-        });
+
+            // حقن content script مرة واحدة فقط
+            if (attempt === 1) {
+                await this.injectContentScriptOnce();
+            }
+            
+            // انتظار التحميل
+            await this.delay(2000 + (attempt * 1000));
+
+            // محاولة ping
+            const response = await this.sendMessageWithTimeout({ action: 'PING' }, 4000);
+
+            if (response && response.status === 'active') {
+                console.log('✅ نجح الاتصال!');
+                this.handleSuccessfulConnection(response);
+                return;
+            }
+
+        } catch (error) {
+            console.error(`❌ فشلت المحاولة ${attempt}:`, error.message);
+            
+            if (attempt < this.maxConnectionAttempts) {
+                await this.delay(1500 * attempt);
+            } else {
+                this.handleConnectionFailure(error);
+            }
+        }
+    }
+}
+async injectContentScriptOnce() {
+    try {
+        console.log('💉 حقن content script (مرة واحدة)...');
         
-        await this.delay(1000);
+        // فحص إذا كان محقون مسبقاً
+        try {
+            const existingResponse = await this.sendMessageWithTimeout({ action: 'PING' }, 1000);
+            if (existingResponse && existingResponse.status === 'active') {
+                console.log('✅ content script موجود مسبقاً');
+                return;
+            }
+        } catch (error) {
+            // غير موجود، سنحقنه
+        }
         
         // حقن جديد
         await chrome.scripting.executeScript({
@@ -327,14 +356,13 @@ async forceReloadContentScript() {
             files: ['content.js']
         });
 
-        console.log('✅ تم إعادة التحميل بالقوة');
+        console.log('✅ تم حقن content script بنجاح');
         
     } catch (error) {
-        console.error('❌ فشل في إعادة التحميل:', error);
-        // لا نرمي خطأ هنا، فقط نسجل
+        console.error('❌ فشل في حقن content script:', error);
+        throw new Error(`فشل في حقن content script: ${error.message}`);
     }
 }
-
 handleSuccessfulConnection(response) {
     console.log('🎉 تم تأسيس الاتصال بنجاح');
     
