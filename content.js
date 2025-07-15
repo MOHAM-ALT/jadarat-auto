@@ -854,38 +854,6 @@ detectPageTypeAndLog() {
     return pageType;
 }
 
-async waitForPageLoad() {
-    this.log('⏳ [LOAD] انتظار تحميل الصفحة المُحسن...');
-    
-    const maxAttempts = 20; // زيادة المحاولات
-    let attempts = 0;
-    
-    while (attempts < maxAttempts) {
-        // فحص متعدد المؤشرات
-        const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
-        const filterElements = document.querySelectorAll('span.filter-text, .osui-accordion-item__title');
-        const pageLoaded = document.readyState === 'complete';
-        
-        if (jobLinks.length >= 3 || filterElements.length >= 1) {
-            this.log('✅ [LOAD] تم تحميل الصفحة بنجاح');
-            await this.wait(2000); // انتظار إضافي للاستقرار
-            return true;
-        }
-        
-        if (pageLoaded && attempts > 10) {
-            // إذا كانت الصفحة محملة لكن بدون وظائف
-            this.log('⚠️ [LOAD] الصفحة محملة لكن قد لا توجد وظائف');
-            return true;
-        }
-        
-        attempts++;
-        await this.wait(1000);
-    }
-    
-    this.log('⚠️ [LOAD] انتهت مهلة انتظار تحميل الصفحة');
-    return false;
-}
-
     getStatus() {
         return {
             isRunning: this.isRunning,
@@ -968,7 +936,13 @@ async runMainLoop() {
         }
         
         // ✅ انتظار قصير لمنع الحمل الزائد
-        await this.wait(500);
+// ✅ انتظار قصير لمنع الحمل الزائد
+await this.wait(500);
+
+// 🆕 فحص دوري لحالة النظام
+if (this.stats.total % 10 === 0 && this.stats.total > 0) {
+    this.checkSystemHealth();
+}
     }
     
     this.log('🏁 [MAIN] انتهت الحلقة الرئيسية');
@@ -980,14 +954,30 @@ async runMainLoop() {
         
         await this.waitForPageLoad();
         
-        const jobCards = this.getAllJobCards();
-        this.totalJobsOnPage = jobCards.length;
-        
-        if (jobCards.length === 0) {
-            this.log('⚠️ [PAGE] لم يتم العثور على وظائف في هذه الصفحة');
-            return false;
-        }
-        
+// ✅ انتظار إضافي للتأكد من تحميل الوظائف
+await this.wait(2000);
+
+const jobCards = this.getAllJobCards();
+this.totalJobsOnPage = jobCards.length;
+
+if (jobCards.length === 0) {
+    this.log('⚠️ [PAGE] لم يتم العثور على وظائف، انتظار إضافي...');
+    
+    // ✅ محاولة إضافية للانتظار
+    await this.wait(5000);
+    const jobCardsRetry = this.getAllJobCards();
+    
+    if (jobCardsRetry.length === 0) {
+        this.log('⚠️ [PAGE] لا توجد وظائف في هذه الصفحة - الانتقال للصفحة التالية');
+        return false;
+    } else {
+        this.log(`✅ [PAGE] تم العثور على ${jobCardsRetry.length} وظيفة بعد الانتظار`);
+        // تحديث المتغيرات
+        const updatedJobCards = this.getAllJobCards();
+        this.totalJobsOnPage = updatedJobCards.length;
+    }
+}
+
         this.log(`📊 [PAGE] سيتم معالجة ${jobCards.length} وظيفة`);
         
         let qualityStats = { excellent: 0, good: 0, average: 0, poor: 0 };
@@ -1482,28 +1472,48 @@ async goBackToJobList() {
     // 🛠️ مساعدات عامة محسنة
     // ========================
     
-    async waitForPageLoad() {
-        this.log('⏳ [LOAD] انتظار تحميل الصفحة المُحسن...');
+async waitForPageLoad() {
+    this.log('⏳ [LOAD] انتظار تحميل الصفحة المُحسن...');
+    
+    const maxAttempts = 20; // زيادة المحاولات
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+        const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
         
-        const maxAttempts = 15;
-        let attempts = 0;
-        
-        while (attempts < maxAttempts) {
-            const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
-            
-            if (jobLinks.length >= 5) {
-                this.log('✅ [LOAD] تم تحميل الصفحة بنجاح');
-                await this.wait(1000);
-                return true;
-            }
-            
-            attempts++;
-            await this.wait(1000);
+        // ✅ قبول أي عدد من الوظائف (حتى لو كان قليل)
+        if (jobLinks.length >= 1) {
+            this.log(`✅ [LOAD] تم تحميل ${jobLinks.length} وظيفة`);
+            await this.wait(1000); // انتظار إضافي للاستقرار
+            return true;
         }
         
-        this.log('⚠️ [LOAD] انتهت مهلة انتظار تحميل الصفحة');
-        return false;
+        // ✅ فحص إضافي للعناصر الأخرى
+        const pageIndicators = [
+            'span.filter-text',
+            '.osui-accordion-item__title',
+            'div[data-container]'
+        ];
+        
+        let foundIndicators = 0;
+        for (const selector of pageIndicators) {
+            if (document.querySelector(selector)) {
+                foundIndicators++;
+            }
+        }
+        
+        if (foundIndicators >= 2 && attempts > 10) {
+            this.log('✅ [LOAD] الصفحة محملة (بدون وظائف)');
+            return true;
+        }
+        
+        attempts++;
+        await this.wait(1500); // انتظار أطول بين المحاولات
     }
+    
+    this.log('⚠️ [LOAD] انتهت مهلة انتظار تحميل الصفحة');
+    return true; // ✅ نتابع حتى لو لم تُحمل بشكل مثالي
+}
 
     async handleAnyPopups() {
         this.log('🔍 [POPUP] فحص النوافذ المنبثقة...');
@@ -1727,6 +1737,33 @@ async goBackToJobList() {
         
         this.saveMemoryData();
     }
+// 🆕 دالة فحص حالة النظام
+checkSystemHealth() {
+    const health = {
+        isRunning: this.isRunning,
+        currentPage: this.detectPageTypeAndLog(),
+        jobsFound: document.querySelectorAll('a[href*="JobDetails"]').length,
+        memorySize: this.visitedJobs.size,
+        stats: this.stats
+    };
+    
+    this.log('🏥 [HEALTH] فحص حالة النظام:', health);
+    
+    // إذا كان النظام يعمل لكن لا يجد وظائف لفترة طويلة
+    if (this.isRunning && health.jobsFound === 0) {
+        this.log('⚠️ [HEALTH] تحذير: النظام يعمل لكن لا يجد وظائف');
+        
+        // محاولة إعادة تحميل الصفحة
+        setTimeout(() => {
+            if (this.isRunning && document.querySelectorAll('a[href*="JobDetails"]').length === 0) {
+                this.log('🔄 [HEALTH] إعادة تحميل الصفحة لحل المشكلة');
+                window.location.reload();
+            }
+        }, 10000); // بعد 10 ثواني
+    }
+    
+    return health;
+}
 
     pauseProcess() {
         this.log('⏸️ [PAUSE] إيقاف مؤقت للعملية...');
