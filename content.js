@@ -200,43 +200,59 @@ if (window.jadaratAutoContentLoaded) {
 
         extractCompanyFromContainer(container, jobTitle) {
             try {
+                this.debugLog(`🔍 استخراج اسم الشركة من الحاوي`);
+                
+                // قائمة المدن السعودية للاستبعاد
+                const saudiCities = ['الرياض', 'جدة', 'الدمام', 'مكة', 'المدينة المنورة', 'المدينة', 'الطائف', 'تبوك', 'الخبر', 'الظهران', 'القطيف', 'الجبيل', 'ينبع', 'أبها', 'خميس مشيط', 'حائل', 'القصيم', 'بريدة', 'الأحساء', 'جازان', 'نجران', 'الباحة', 'عرعر', 'سكاكا'];
+                
                 // الطريقة 1: البحث في الرابط الأول (عادة اسم الشركة)
-                const firstLink = container.querySelector('a[data-link]');
-                if (firstLink) {
-                    const linkSpan = firstLink.querySelector('span[data-expression]');
-                    if (linkSpan && linkSpan.textContent?.trim()) {
-                        const companyText = linkSpan.textContent.trim();
-                        if (companyText !== jobTitle && companyText.length > 3 && 
-                            !companyText.includes('%') && !companyText.match(/\d{2}\/\d{2}\/\d{4}/)) {
-                            this.debugLog(`🏢 الشركة (من الرابط): ${companyText}`);
-                            return companyText;
+                const companyLink = container.querySelector('div.font-bold.font-size-base a[data-link] span[data-expression]');
+                if (companyLink && companyLink.textContent?.trim()) {
+                    const companyText = companyLink.textContent.trim();
+                    if (this.isValidCompanyName(companyText, jobTitle, saudiCities)) {
+                        this.debugLog(`🏢 الشركة (من رابط الشركة): ${companyText}`);
+                        return companyText;
+                    }
+                }
+
+                // الطريقة 2: البحث في أول رابط في الحاوي
+                const firstLink = container.querySelector('a[data-link] span[data-expression]');
+                if (firstLink && firstLink.textContent?.trim()) {
+                    const companyText = firstLink.textContent.trim();
+                    if (this.isValidCompanyName(companyText, jobTitle, saudiCities)) {
+                        this.debugLog(`🏢 الشركة (من أول رابط): ${companyText}`);
+                        return companyText;
+                    }
+                }
+
+                // الطريقة 3: البحث في العناصر الجريئة (مع استبعاد المدن)
+                const boldElements = container.querySelectorAll('.font-bold span[data-expression]');
+                for (const element of boldElements) {
+                    const text = element.textContent?.trim();
+                    if (this.isValidCompanyName(text, jobTitle, saudiCities)) {
+                        // تأكد أنه ليس في منطقة المدينة
+                        const parentText = element.closest('[data-container]')?.textContent || '';
+                        if (!parentText.includes('المدينة') || !saudiCities.includes(text)) {
+                            this.debugLog(`🏢 الشركة (من العنصر الجريء): ${text}`);
+                            return text;
                         }
                     }
                 }
 
-                // الطريقة 2: البحث في font-bold font-size-base
-                const boldElements = container.querySelectorAll('.font-bold.font-size-base span[data-expression]');
-                for (const element of boldElements) {
-                    const text = element.textContent?.trim();
-                    if (text && text !== jobTitle && text.length > 3 && 
-                        !text.includes('%') && !text.match(/\d{2}\/\d{2}\/\d{4}/) && 
-                        !text.match(/^\d+$/)) {
-                        this.debugLog(`🏢 الشركة (من العنصر الجريء): ${text}`);
-                        return text;
-                    }
-                }
-
-                // الطريقة 3: البحث في أول span[data-expression] مناسب
+                // الطريقة 4: البحث العام مع فلترة قوية
                 const allSpans = container.querySelectorAll('span[data-expression]');
                 for (const span of allSpans) {
                     const text = span.textContent?.trim();
-                    if (text && text !== jobTitle && text.length > 3 && text.length < 100 &&
-                        !text.includes('%') && !text.match(/\d{2}\/\d{2}\/\d{4}/) && 
-                        !text.match(/^\d+$/) && !text.includes('المدينة') && 
-                        !text.includes('الوظائف') && !text.includes('تاريخ') &&
-                        !text.includes('تنفيذ الإجراءات')) {
-                        this.debugLog(`🏢 الشركة (عام): ${text}`);
-                        return text;
+                    if (this.isValidCompanyName(text, jobTitle, saudiCities)) {
+                        // تأكد أنه في بداية البطاقة وليس في تفاصيل المدينة/التاريخ
+                        const spanRect = span.getBoundingClientRect();
+                        const containerRect = container.getBoundingClientRect();
+                        const isInTopHalf = spanRect.top < (containerRect.top + containerRect.height / 2);
+                        
+                        if (isInTopHalf) {
+                            this.debugLog(`🏢 الشركة (عام - جزء علوي): ${text}`);
+                            return text;
+                        }
                     }
                 }
 
@@ -249,24 +265,76 @@ if (window.jadaratAutoContentLoaded) {
             }
         }
 
+        // دالة مساعدة للتحقق من صحة اسم الشركة
+        isValidCompanyName(text, jobTitle, saudiCities) {
+            if (!text || text.length < 3 || text.length > 150) return false;
+            if (text === jobTitle) return false;
+            if (text.includes('%')) return false;
+            if (text.match(/\d{2}\/\d{2}\/\d{4}/)) return false;
+            if (text.match(/^\d+$/)) return false;
+            if (saudiCities.includes(text)) return false;
+            if (text.includes('المدينة') && text.length < 10) return false;
+            if (text.includes('الوظائف المتاحة')) return false;
+            if (text.includes('تاريخ النشر')) return false;
+            if (text.includes('تنفيذ الإجراءات') || text.includes('مساعدة الرئيس')) return false;
+            if (text.startsWith('مساعدة') || text.startsWith('تنفيذ') || text.startsWith('المشاركة')) return false;
+            
+            return true;
+        }
+
         extractCityFromContainer(container) {
             try {
-                // البحث عن نص "المدينة" ثم البحث في نفس المنطقة
+                this.debugLog(`🔍 استخراج المدينة من الحاوي`);
+                
+                // قائمة المدن السعودية
+                const saudiCities = ['الرياض', 'جدة', 'الدمام', 'مكة', 'المدينة المنورة', 'المدينة', 'الطائف', 'تبوك', 'الخبر', 'الظهران', 'القطيف', 'الجبيل', 'ينبع', 'أبها', 'خميس مشيط', 'حائل', 'القصيم', 'بريدة', 'الأحساء', 'جازان', 'نجران', 'الباحة', 'عرعر', 'سكاكا'];
+                
+                // الطريقة 1: البحث المباشر في منطقة "المدينة"
                 const containerText = container.textContent || '';
                 if (containerText.includes('المدينة')) {
                     // البحث في العناصر القريبة من نص "المدينة"
-                    const cityElements = container.querySelectorAll('span[data-expression]');
-                    for (const element of cityElements) {
-                        const text = element.textContent?.trim();
-                        // البحث عن أسماء مدن سعودية شائعة
-                        const saudiCities = ['الرياض', 'جدة', 'الدمام', 'مكة', 'المدينة', 'الطائف', 'تبوك', 'الخبر', 'الظهران', 'القطيف'];
-                        if (text && saudiCities.some(city => text.includes(city))) {
-                            this.debugLog(`🏙️ المدينة: ${text}`);
+                    const allSpans = container.querySelectorAll('span[data-expression]');
+                    
+                    for (const span of allSpans) {
+                        const text = span.textContent?.trim();
+                        if (text && saudiCities.includes(text)) {
+                            // تأكد أن العنصر قريب من كلمة "المدينة"
+                            const spanParent = span.closest('[data-container]');
+                            if (spanParent && spanParent.textContent?.includes('المدينة')) {
+                                this.debugLog(`🏙️ المدينة (من منطقة المدينة): ${text}`);
+                                return text;
+                            }
+                        }
+                    }
+                }
+
+                // الطريقة 2: البحث في tooltip للمدينة
+                const tooltipElement = container.querySelector('.osui-tooltip span[data-expression]');
+                if (tooltipElement && tooltipElement.textContent?.trim()) {
+                    const cityText = tooltipElement.textContent.trim();
+                    if (saudiCities.includes(cityText)) {
+                        this.debugLog(`🏙️ المدينة (من tooltip): ${cityText}`);
+                        return cityText;
+                    }
+                }
+
+                // الطريقة 3: البحث العام في أسماء المدن
+                const allSpans = container.querySelectorAll('span[data-expression]');
+                for (const span of allSpans) {
+                    const text = span.textContent?.trim();
+                    if (text && saudiCities.includes(text)) {
+                        // تأكد أنه ليس في منطقة اسم الشركة (أول عنصر)
+                        const isInFirstLink = span.closest('a[data-link]') === container.querySelector('a[data-link]');
+                        if (!isInFirstLink) {
+                            this.debugLog(`🏙️ المدينة (عام): ${text}`);
                             return text;
                         }
                     }
                 }
+                
+                this.debugLog(`🏙️ لم يتم العثور على المدينة`);
                 return null;
+                
             } catch (error) {
                 this.debugLog('❌ خطأ في استخراج المدينة:', error);
                 return null;
@@ -454,7 +522,7 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // استخراج عنوان الوظيفة (مُصحح)
+        // استخراج عنوان الوظيفة (مُصحح نهائياً)
         // ===============================
 
         getJobTitle(link) {
@@ -471,32 +539,60 @@ if (window.jadaratAutoContentLoaded) {
                     }
                 }
 
-                // الطريقة 2: البحث في أي span[data-expression] داخل الرابط
+                // الطريقة 2: البحث في span.text-primary.heading5 (للوظائف في الروابط الأولى)
+                const primaryHeading = link.querySelector('span.text-primary, .text-primary span, .heading5 span');
+                if (primaryHeading && primaryHeading.textContent?.trim()) {
+                    const title = primaryHeading.textContent.trim();
+                    if (title.length > 3 && !title.includes('...') && !title.includes('%')) {
+                        this.debugLog(`✅ عنوان من text-primary: ${title}`);
+                        return title;
+                    }
+                }
+
+                // الطريقة 3: البحث في أي span[data-expression] داخل الرابط (مع فلترة محسنة)
                 const dataSpans = link.querySelectorAll('span[data-expression]');
                 for (const span of dataSpans) {
                     const text = span.textContent?.trim();
-                    if (text && text.length > 5 && !text.includes('%') && 
-                        !text.match(/\d{2}\/\d{2}\/\d{4}/) && !text.includes('...')) {
-                        // التأكد أنه ليس نسبة توافق أو تاريخ
-                        if (!text.match(/^\d+$/) && !span.classList.contains('matching_score')) {
+                    if (text && text.length > 5 && text.length < 100 && 
+                        !text.includes('%') && !text.match(/\d{2}\/\d{2}\/\d{4}/) && 
+                        !text.includes('...') && !text.match(/^\d+$/) && 
+                        !span.classList.contains('matching_score')) {
+                        
+                        // تأكد أنه ليس اسم شركة أو مدينة
+                        const saudiCities = ['الرياض', 'جدة', 'الدمام', 'مكة', 'المدينة', 'الطائف', 'تبوك', 'الخبر', 'الظهران'];
+                        const isCity = saudiCities.some(city => text.includes(city));
+                        
+                        if (!isCity && !text.includes('شركة') && !text.includes('مؤسسة')) {
                             this.debugLog(`✅ عنوان من data-expression: ${text}`);
                             return text;
                         }
                     }
                 }
 
-                // الطريقة 3: البحث في النص المباشر للرابط
+                // الطريقة 4: البحث في النص المباشر للرابط (محسن)
                 if (link.textContent && link.textContent.trim()) {
-                    const directText = link.textContent.trim();
-                    // تنظيف النص من النسب والأرقام
-                    const cleanText = directText.split('\n')[0].split('%')[0].trim();
-                    if (cleanText.length > 5 && !cleanText.includes('...')) {
-                        this.debugLog(`✅ عنوان من النص المباشر: ${cleanText}`);
-                        return cleanText;
+                    const fullText = link.textContent.trim();
+                    // أخذ أول سطر فقط وإزالة النسب
+                    const lines = fullText.split('\n').filter(line => line.trim().length > 0);
+                    
+                    for (const line of lines) {
+                        const cleanText = line.split('%')[0].trim();
+                        if (cleanText.length > 5 && cleanText.length < 100 && 
+                            !cleanText.includes('...') && !cleanText.match(/\d{2}\/\d{2}\/\d{4}/)) {
+                            
+                            // تأكد أنه ليس مدينة
+                            const saudiCities = ['الرياض', 'جدة', 'الدمام', 'مكة', 'المدينة', 'الطائف', 'تبوك', 'الخبر', 'الظهران'];
+                            const isCity = saudiCities.some(city => cleanText === city);
+                            
+                            if (!isCity) {
+                                this.debugLog(`✅ عنوان من النص المباشر: ${cleanText}`);
+                                return cleanText;
+                            }
+                        }
                     }
                 }
 
-                // الطريقة 4: استخراج من URL كاحتياطي
+                // الطريقة 5: استخراج من URL كاحتياطي
                 if (link.href) {
                     const urlMatch = link.href.match(/JobTitle=([^&]+)/);
                     if (urlMatch) {
@@ -629,33 +725,65 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // فحص "تم التقدم" في القائمة (محسن)
+        // فحص "تم التقدم" في القائمة (مُحسن نهائياً)
         // ===============================
 
         checkAppliedInList(container) {
             try {
-                // فحص أيقونة "تم التقدم" المحددة
-                const tickIcon = container.querySelector('img[src*="UEP_Resources.tickcircle.svg"]');
-                if (tickIcon) {
-                    this.debugLog('✅ وجد أيقونة "تم التقدم" في القائمة');
+                this.debugLog(`🔍 فحص "تم التقدم" في القائمة بدقة`);
+                
+                // الطريقة 1: فحص الأيقونة المحددة مع التحقق من الرؤية
+                const tickIcon = container.querySelector('img[src*="UEP_Resources.tickcircle.svg"], img[src*="tickcircle.svg"]');
+                if (tickIcon && tickIcon.offsetWidth > 0 && tickIcon.offsetHeight > 0) {
+                    this.debugLog('✅ وجد أيقونة "تم التقدم" مرئية في القائمة');
                     return true;
                 }
                 
-                // فحص النص المحدد "تم التقدم" مع الكلاس
+                // الطريقة 2: فحص النص المحدد "تم التقدم" مع الكلاس
                 const appliedSpan = container.querySelector('span.text-primary');
                 if (appliedSpan && appliedSpan.textContent?.trim() === 'تم التقدم') {
-                    this.debugLog('✅ وجد نص "تم التقدم" في القائمة');
-                    return true;
+                    // تأكد من وجود الأيقونة بجانبه
+                    const nearbyIcon = appliedSpan.parentElement?.querySelector('img[src*="tickcircle"]') ||
+                                     appliedSpan.closest('[data-container]')?.querySelector('img[src*="tickcircle"]');
+                    if (nearbyIcon) {
+                        this.debugLog('✅ وجد نص "تم التقدم" مع أيقونة في القائمة');
+                        return true;
+                    }
                 }
                 
-                // فحص إضافي للتأكد
-                const textContent = container.textContent || '';
-                if (textContent.includes('تم التقدم') && container.querySelector('img[src*="tickcircle"]')) {
-                    this.debugLog('✅ وجد مؤشرات "تم التقدم" في القائمة');
-                    return true;
+                // الطريقة 3: فحص مجموعة النص والأيقونة معاً
+                const textAndIconContainer = container.querySelector('[data-container*="Column2"]');
+                if (textAndIconContainer) {
+                    const hasIcon = textAndIconContainer.querySelector('img[src*="tickcircle"]');
+                    const hasText = textAndIconContainer.textContent?.includes('تم التقدم');
+                    
+                    if (hasIcon && hasText) {
+                        this.debugLog('✅ وجد مجموعة أيقونة ونص "تم التقدم" في القائمة');
+                        return true;
+                    }
                 }
                 
+                // الطريقة 4: فحص شامل في الحاوي مع التأكد من السياق
+                const containerText = container.textContent || '';
+                if (containerText.includes('تم التقدم')) {
+                    // تأكد من وجود أيقونة في نفس المنطقة
+                    const hasTickIcon = container.querySelector('img[src*="tickcircle"]');
+                    if (hasTickIcon) {
+                        // تأكد أنه ليس مجرد نص في الوصف
+                        const textElements = container.querySelectorAll('span');
+                        for (const element of textElements) {
+                            if (element.textContent?.trim() === 'تم التقدم' && 
+                                element.classList.contains('text-primary')) {
+                                this.debugLog('✅ وجد مؤشرات "تم التقدم" شاملة في القائمة');
+                                return true;
+                            }
+                        }
+                    }
+                }
+                
+                this.debugLog('✅ لم يتم التقدم على هذه الوظيفة في القائمة');
                 return false;
+                
             } catch (error) {
                 this.debugLog('❌ خطأ في فحص التقديم في القائمة:', error);
                 return false;
