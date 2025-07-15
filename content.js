@@ -1858,9 +1858,7 @@ class JadaratAutoStable {
             clearData: async () => {
                 this.log('🗑️ [CLEAR] مسح جميع البيانات...');
                 
-                this.visitedJobs.clear();
-                this.rejectedJobs.clear();
-                this.appliedJobs.clear();
+
                 
                 this.stats = {
                     applied: 0,
@@ -1873,7 +1871,6 @@ class JadaratAutoStable {
                     dataExtractionErrors: 0
                 };
                 
-                await chrome.storage.local.clear();
                 this.log('✅ [CLEAR] تم مسح جميع البيانات');
             }
         };
