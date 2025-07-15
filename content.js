@@ -436,27 +436,30 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // فحص "تم التقدم" في القائمة
+        // فحص "تم التقدم" في القائمة (محسن)
         // ===============================
 
         checkAppliedInList(container) {
             try {
-                // فحص أيقونة "تم التقدم"
-                const tickIcon = container.querySelector('img[src*="tickcircle.svg"]');
+                // فحص أيقونة "تم التقدم" المحددة
+                const tickIcon = container.querySelector('img[src*="UEP_Resources.tickcircle.svg"]');
                 if (tickIcon) {
                     this.debugLog('✅ وجد أيقونة "تم التقدم" في القائمة');
                     return true;
                 }
                 
-                // فحص نص "تم التقدم"
-                const textContent = container.textContent || '';
-                const appliedTexts = ['تم التقدم', 'تم التقديم'];
+                // فحص النص المحدد "تم التقدم" مع الكلاس
+                const appliedSpan = container.querySelector('span.text-primary');
+                if (appliedSpan && appliedSpan.textContent?.trim() === 'تم التقدم') {
+                    this.debugLog('✅ وجد نص "تم التقدم" في القائمة');
+                    return true;
+                }
                 
-                for (const text of appliedTexts) {
-                    if (textContent.includes(text)) {
-                        this.debugLog(`✅ وجد نص "${text}" في القائمة`);
-                        return true;
-                    }
+                // فحص إضافي للتأكد
+                const textContent = container.textContent || '';
+                if (textContent.includes('تم التقدم') && container.querySelector('img[src*="tickcircle"]')) {
+                    this.debugLog('✅ وجد مؤشرات "تم التقدم" في القائمة');
+                    return true;
                 }
                 
                 return false;
@@ -667,12 +670,23 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // فحص التقديم المسبق في التفاصيل
+        // فحص التقديم المسبق في التفاصيل (محسن)
         // ===============================
 
         async checkIfAlreadyAppliedInDetails() {
             this.debugLog('🔍 فحص حالة التقديم المسبق في التفاصيل');
             
+            // انتظار تحميل الصفحة قليلاً
+            await this.wait(2000);
+            
+            // فحص وجود زر "تقديم" - إذا موجود = لم يتم التقدم
+            const submitButton = document.querySelector('button[data-button][class*="btn-primary"]');
+            if (submitButton && submitButton.textContent?.trim() === 'تقديم') {
+                this.debugLog('✅ وجد زر "تقديم" - لم يتم التقدم مسبقاً');
+                return false;
+            }
+            
+            // البحث عن مؤشرات التقديم المسبق
             const pageText = document.body.textContent || '';
             
             // مؤشرات التقديم المسبق
@@ -692,14 +706,20 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
             
-            // فحص أزرار بدلاً من "تقديم"
-            const buttons = document.querySelectorAll('button');
+            // فحص أزرار أخرى غير "تقديم"
+            const buttons = document.querySelectorAll('button[data-button]');
             for (const button of buttons) {
                 const btnText = button.textContent?.trim();
-                if (btnText && btnText.includes('استعراض')) {
-                    this.debugLog(`✅ وجد زر استعراض: ${btnText}`);
+                if (btnText && (btnText.includes('استعراض') || btnText.includes('عرض الطلب') || btnText.includes('طلب مقدم'))) {
+                    this.debugLog(`✅ وجد زر بديل: ${btnText}`);
                     return true;
                 }
+            }
+            
+            // إذا لم نجد زر "تقديم" ولا مؤشرات أخرى
+            if (!submitButton) {
+                this.debugLog('⚠️ لم يوجد زر "تقديم" - افتراض التقديم المسبق');
+                return true;
             }
             
             this.debugLog('✅ لم يتم التقديم مسبقاً');
@@ -776,12 +796,20 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // البحث عن زر التقديم
+        // البحث عن زر التقديم (محسن)
         // ===============================
 
         findSubmitButton() {
             this.debugLog('🔍 البحث المفصل عن زر التقديم');
             
+            // البحث عن الزر المحدد من HTML
+            const primaryButton = document.querySelector('button[data-button][class*="btn-primary"]');
+            if (primaryButton && primaryButton.textContent?.trim() === 'تقديم') {
+                this.debugLog(`✅ وجد زر التقديم الأساسي: "${primaryButton.textContent.trim()}"`);
+                return primaryButton;
+            }
+            
+            // بحث عام في جميع الأزرار
             const buttons = document.querySelectorAll('button, input[type="submit"], a[role="button"]');
             
             for (const button of buttons) {
@@ -803,13 +831,24 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // البحث عن نافذة التأكيد
+        // البحث عن نافذة التأكيد (محسن)
         // ===============================
 
         findConfirmationModal() {
             this.debugLog('🔍 البحث عن نافذة التأكيد');
             
-            const selectors = ['[role="dialog"]', '.modal', '[class*="modal"]', '[class*="popup"]'];
+            // البحث عن النافذة المحددة
+            const specificModal = document.querySelector('div[data-popup][role="dialog"]');
+            if (specificModal && specificModal.offsetWidth > 0 && specificModal.offsetHeight > 0) {
+                const text = specificModal.textContent || '';
+                if (text.includes('هل أنت متأكد من التقديم')) {
+                    this.debugLog('✅ وجد نافذة التأكيد المحددة');
+                    return specificModal;
+                }
+            }
+            
+            // بحث عام في النوافذ
+            const selectors = ['[role="dialog"]', '.popup-dialog', '[data-popup]', '.modal', '[class*="modal"]', '[class*="popup"]'];
             
             for (const selector of selectors) {
                 const dialogs = document.querySelectorAll(selector);
@@ -817,12 +856,12 @@ if (window.jadaratAutoContentLoaded) {
                 for (const dialog of dialogs) {
                     if (dialog.offsetWidth > 0 && dialog.offsetHeight > 0) {
                         const text = dialog.textContent || '';
-                        this.debugLog(`🔍 فحص نافذة: "${text.substring(0, 100)}..."`);
+                        this.debugLog(`🔍 فحص نافذة: "${text.substring(0, 50)}..."`);
                         
-                        if (text.includes('هل أنت متأكد') || 
-                            text.includes('تأكيد') || 
-                            text.includes('متأكد من التقديم') ||
-                            text.includes('تأكيد التقديم')) {
+                        if (text.includes('هل أنت متأكد من التقديم') || 
+                            text.includes('هل أنت متأكد') || 
+                            text.includes('تأكيد التقديم') ||
+                            (text.includes('تقديم') && text.includes('متأكد'))) {
                             this.debugLog('✅ وجد نافذة التأكيد');
                             return dialog;
                         }
@@ -861,7 +900,7 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // فحص نتيجة التقديم
+        // فحص نتيجة التقديم (محسن)
         // ===============================
 
         checkApplicationResult() {
@@ -869,9 +908,31 @@ if (window.jadaratAutoContentLoaded) {
             
             const pageText = document.body.textContent;
             
-            // فحص مؤشرات النجاح
+            // فحص نوافذ النجاح
+            const successModal = document.querySelector('div[data-popup][role="dialog"]');
+            if (successModal && successModal.offsetWidth > 0) {
+                const modalText = successModal.textContent || '';
+                if (modalText.includes('تم تقديم طلبك') || modalText.includes('تم التقديم بنجاح')) {
+                    this.debugLog('✅ نافذة نجاح: تم التقديم بنجاح');
+                    return { success: true, type: 'success' };
+                }
+            }
+            
+            // فحص نوافذ الرفض المحددة
+            const rejectionModal = document.querySelector('div[data-popup][role="dialog"]');
+            if (rejectionModal && rejectionModal.offsetWidth > 0) {
+                const modalText = rejectionModal.textContent || '';
+                if (modalText.includes('عذراً ، لا يمكنك التقديم')) {
+                    const reason = this.extractRejectionReason(modalText);
+                    this.debugLog(`❌ نافذة رفض: ${reason}`);
+                    return { success: false, type: 'rejection', reason: reason };
+                }
+            }
+            
+            // فحص مؤشرات النجاح في الصفحة
             const successIndicators = [
                 'تم التقديم بنجاح',
+                'تم تقديم طلبك',
                 'نجح التقديم',
                 'تم بنجاح',
                 'تم إرسال طلبك',
@@ -885,8 +946,9 @@ if (window.jadaratAutoContentLoaded) {
                 }
             }
             
-            // فحص مؤشرات الرفض
+            // فحص مؤشرات الرفض في الصفحة
             const rejectionIndicators = [
+                'عذراً ، لا يمكنك التقديم',
                 'عذراً',
                 'لا يمكنك التقديم',
                 'غير مؤهل',
@@ -943,25 +1005,59 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // إغلاق نوافذ النتيجة
+        // إغلاق نوافذ النتيجة (محسن)
         // ===============================
 
         async closeResultModals() {
             try {
-                const modals = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"]');
+                this.debugLog('🔍 البحث عن نوافذ النتيجة لإغلاقها');
+                
+                // البحث عن النوافذ المنبثقة المحددة
+                const modals = document.querySelectorAll('div[data-popup][role="dialog"], [role="dialog"], .popup-dialog, .modal, [class*="modal"]');
                 
                 for (const modal of modals) {
                     if (modal.offsetWidth > 0 && modal.offsetHeight > 0) {
                         const text = modal.textContent || '';
                         
-                        // إذا كانت نافذة نتيجة
-                        if (text.includes('تم التقديم') || text.includes('لا يمكنك') || text.includes('عذراً')) {
+                        // إذا كانت نافذة نتيجة (نجاح أو رفض)
+                        if (text.includes('تم التقديم') || 
+                            text.includes('تم تقديم طلبك') || 
+                            text.includes('عذراً ، لا يمكنك التقديم') || 
+                            text.includes('لا يمكنك') || 
+                            text.includes('عذراً')) {
+                            
                             this.debugLog('🚫 إغلاق نافذة النتيجة');
                             
-                            const buttons = modal.querySelectorAll('button');
-                            for (const btn of buttons) {
+                            // البحث عن أزرار الإغلاق المحددة
+                            const closeButtons = modal.querySelectorAll('button[data-button]');
+                            for (const btn of closeButtons) {
                                 const btnText = btn.textContent?.trim();
-                                if (btnText && (btnText.includes('إغلاق') || btnText.includes('موافق') || btnText.includes('×'))) {
+                                if (btnText && btnText === 'إغلاق') {
+                                    this.debugLog(`✅ النقر على زر إغلاق: ${btnText}`);
+                                    await this.clickElementSafe(btn);
+                                    await this.wait(1000);
+                                    return;
+                                }
+                            }
+                            
+                            // البحث عن أيقونة الإغلاق (X)
+                            const closeIcon = modal.querySelector('a[data-link] img[src*="close.svg"]');
+                            if (closeIcon) {
+                                this.debugLog('✅ النقر على أيقونة الإغلاق (X)');
+                                const closeLink = closeIcon.closest('a[data-link]');
+                                if (closeLink) {
+                                    await this.clickElementSafe(closeLink);
+                                    await this.wait(1000);
+                                    return;
+                                }
+                            }
+                            
+                            // بحث عام عن أزرار الإغلاق
+                            const allButtons = modal.querySelectorAll('button, a');
+                            for (const btn of allButtons) {
+                                const btnText = btn.textContent?.trim();
+                                if (btnText && (btnText.includes('إغلاق') || btnText.includes('موافق') || btnText === '×')) {
+                                    this.debugLog(`✅ النقر على زر: ${btnText}`);
                                     await this.clickElementSafe(btn);
                                     await this.wait(1000);
                                     return;
@@ -970,6 +1066,8 @@ if (window.jadaratAutoContentLoaded) {
                         }
                     }
                 }
+                
+                this.debugLog('⚠️ لم توجد نوافذ نتيجة مفتوحة');
             } catch (error) {
                 this.debugLog('❌ خطأ في إغلاق النوافذ:', error);
             }
