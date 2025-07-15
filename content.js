@@ -99,7 +99,8 @@ class JadaratAutoStable {
         this.currentJobIndex = 0;
         this.totalJobsOnPage = 0;
         this.currentPage = 1;
-        
+        this.lastPageType = null; // 🆕 لتجنب spam في console
+
         this.visitedJobs = new Set();
         this.rejectedJobs = new Set();
         this.appliedJobs = new Set();
@@ -827,8 +828,7 @@ detectPageTypeAndLog() {
     const url = window.location.href;
     let pageType = 'unknown';
     
-    this.log(`🌐 [PAGE] فحص الرابط: ${url}`);
-    
+    // ✅ تسجيل أقل لتجنب spam في console
     if (url.includes('JobDetails')) {
         pageType = 'jobDetails';
         this.log('📄 [PAGE] تم التعرف على صفحة تفاصيل الوظيفة');
@@ -838,60 +838,19 @@ detectPageTypeAndLog() {
         
         const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
         this.log(`📊 [PAGE] عدد روابط الوظائف الموجودة: ${jobLinks.length}`);
-        
-        if (jobLinks.length === 0) {
-            this.log('⚠️ [PAGE] لم يتم العثور على روابط وظائف - قد تحتاج الصفحة وقت إضافي للتحميل');
-        }
+    } else if (url === 'https://jadarat.sa/' || url === 'https://jadarat.sa') {
+        pageType = 'home';
+        this.log('🏠 [PAGE] تم التعرف على الصفحة الرئيسية');
     } else {
-        // 🔥 إضافة فحص إضافي للتعرف على قائمة الوظائف
-        const pageIndicators = [
-            'span.filter-text:contains("تصفية")',              // من HTML المرفوع
-            'div.osui-accordion-item__title',                  // عنصر التصفية
-            'span.no_of_filter:contains("البحث المحفوظ")',      // نص البحث المحفوظ
-            'i.filter-icon.fa-sliders',                       // أيقونة التصفية
-            'a[href*="JobDetails"]'                           // روابط الوظائف
-        ];
-        
-        let foundIndicators = 0;
-        for (const selector of pageIndicators) {
-            if (selector.includes(':contains')) {
-                // بحث النص يدوياً
-                if (selector.includes('تصفية')) {
-                    const filterElements = document.querySelectorAll('span');
-                    for (const span of filterElements) {
-                        if (span.textContent.includes('تصفية')) {
-                            foundIndicators++;
-                            break;
-                        }
-                    }
-                } else if (selector.includes('البحث المحفوظ')) {
-                    const searchElements = document.querySelectorAll('span');
-                    for (const span of searchElements) {
-                        if (span.textContent.includes('البحث المحفوظ')) {
-                            foundIndicators++;
-                            break;
-                        }
-                    }
-                }
-            } else {
-                if (document.querySelector(selector)) {
-                    foundIndicators++;
-                }
-            }
-        }
-        
-        if (foundIndicators >= 2) {
-            pageType = 'jobList';
-            this.log('📋 [PAGE] تم التعرف على قائمة الوظائف (فحص إضافي)');
-        } else if (url === 'https://jadarat.sa/' || url === 'https://jadarat.sa') {
-            pageType = 'home';
-            this.log('🏠 [PAGE] تم التعرف على الصفحة الرئيسية');
-        } else {
-            this.log('❓ [PAGE] نوع صفحة غير معروف');
-        }
+        this.log(`❓ [PAGE] نوع صفحة غير معروف: ${url}`);
     }
     
-    this.log(`🎯 [PAGE] نوع الصفحة النهائي: ${pageType}`);
+    // ✅ تسجيل النتيجة النهائية فقط عند تغيير نوع الصفحة
+    if (this.lastPageType !== pageType) {
+        this.log(`🎯 [PAGE] نوع الصفحة النهائي: ${pageType}`);
+        this.lastPageType = pageType;
+    }
+    
     return pageType;
 }
 
@@ -968,49 +927,53 @@ async waitForPageLoad() {
         }
     }
 
-    async runMainLoop() {
-        this.log('🔄 [MAIN] بدء الحلقة الرئيسية المُحسنة...');
+async runMainLoop() {
+    this.log('🔄 [MAIN] بدء الحلقة الرئيسية المُحسنة...');
+    
+    while (!this.shouldStop && this.isRunning) {
+        const pageType = this.detectPageTypeAndLog();
         
-        while (!this.shouldStop && this.isRunning) {
-            const pageType = this.detectPageTypeAndLog();
-            
-            switch (pageType) {
-                case 'jobList':
-                    this.log('📋 [MAIN] معالجة صفحة قائمة الوظائف...');
-                    const hasMoreJobs = await this.processJobListPage();
-                    
-                    if (!hasMoreJobs && !this.shouldStop) {
-                        this.log('📄 [MAIN] محاولة الانتقال للصفحة التالية...');
-                        const movedToNext = await this.moveToNextPage();
-                        if (!movedToNext) {
-                            this.log('✅ [MAIN] تم الانتهاء من جميع الصفحات');
-                            break;
-                        }
+        switch (pageType) {
+            case 'jobList':
+                this.log('📋 [MAIN] معالجة صفحة قائمة الوظائف...');
+                const hasMoreJobs = await this.processJobListPage();
+                
+                if (!hasMoreJobs && !this.shouldStop) {
+                    this.log('📄 [MAIN] محاولة الانتقال للصفحة التالية...');
+                    const movedToNext = await this.moveToNextPage();
+                    if (!movedToNext) {
+                        this.log('✅ [MAIN] تم الانتهاء من جميع الصفحات');
+                        break; // ✅ اخرج من الحلقة
                     }
-                    break;
-                    
-                case 'jobDetails':
-                    this.log('🔙 [MAIN] في صفحة تفاصيل، العودة للقائمة...');
-                    await this.goBackToJobList();
-                    break;
-                    
-                case 'home':
-                    this.log('🏠 [MAIN] في الصفحة الرئيسية، التنقل للوظائف...');
-                    await this.navigateToJobList();
-                    break;
-                    
-                default:
-                    this.log('❓ [MAIN] صفحة غير معروفة، محاولة التنقل...');
-                    await this.navigateToJobList();
-                    break;
-            }
-            
-            await this.wait(1000);
+                }
+                break;
+                
+            case 'jobDetails':
+                this.log('🔙 [MAIN] في صفحة تفاصيل، العودة للقائمة...');
+                await this.goBackToJobList();
+                // ✅ لا نحتاج انتظار إضافي لأن goBackToJobList تتعامل مع هذا
+                break;
+                
+            case 'home':
+                this.log('🏠 [MAIN] في الصفحة الرئيسية، التنقل للوظائف...');
+                await this.navigateToJobList();
+                await this.wait(3000);
+                break;
+                
+            default:
+                this.log('❓ [MAIN] صفحة غير معروفة، التنقل للقائمة...');
+                await this.navigateToJobList();
+                await this.wait(3000);
+                break;
         }
         
-        this.log('🏁 [MAIN] انتهت الحلقة الرئيسية');
-        await this.displayFinalResults();
+        // ✅ انتظار قصير لمنع الحمل الزائد
+        await this.wait(500);
     }
+    
+    this.log('🏁 [MAIN] انتهت الحلقة الرئيسية');
+    await this.displayFinalResults();
+}
 
     async processJobListPage() {
         this.log('📋 [PAGE] معالجة صفحة قائمة الوظائف المُحسنة...');
@@ -1157,20 +1120,22 @@ async waitForPageLoad() {
                 await this.saveRejectionReason(jobData, applicationResult.reason);
             }
             
-            this.log('🔙 [NEW_JOB] العودة لقائمة الوظائف...');
-            await this.goBackToJobList();
-            
-            return applicationResult.success ? 'applied_success' : 'applied_rejected';
+ // ✅ العودة المباشرة بدون تأخير
+this.log('🔙 [NEW_JOB] العودة لقائمة الوظائف...');
+await this.goBackToJobList();
+
+return applicationResult.success ? 'applied_success' : 'applied_rejected';
             
         } catch (error) {
             this.log('❌ [NEW_JOB] خطأ في معالجة الوظيفة الجديدة:', error);
             this.stats.errors++;
             
-            try {
-                await this.goBackToJobList();
-            } catch (backError) {
-                this.log('❌ [NEW_JOB] خطأ في العودة للقائمة:', backError);
-            }
+           // ✅ في حالة الخطأ، تأكد من العودة
+try {
+    await this.goBackToJobList();
+} catch (backError) {
+    this.log('❌ [NEW_JOB] خطأ في العودة للقائمة:', backError);
+}
             
             return 'error';
         }
@@ -1444,37 +1409,20 @@ async waitForPageLoad() {
     // ========================
     
 async goBackToJobList() {
-    this.log('🔙 [BACK] العودة لقائمة الوظائف...');
+    this.log('🔙 [BACK] العودة المُحسنة لقائمة الوظائف...');
     
     try {
-        window.history.back();
-        await this.wait(4000); // زيادة وقت الانتظار
+        // ✅ التنقل المباشر (الطريقة الوحيدة التي تعمل مع SPA)
+        const jobListUrl = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
         
-        const maxAttempts = 12; // زيادة المحاولات
-        let attempts = 0;
+        this.log('🔄 [BACK] التنقل المباشر للقائمة...');
+        window.location.href = jobListUrl;
         
-        while (attempts < maxAttempts) {
-            const pageType = this.detectPageTypeAndLog(); // فحص فوري للصفحة
-            
-            if (pageType === 'jobList') {
-                const jobCards = document.querySelectorAll('a[href*="JobDetails"]');
-                if (jobCards.length >= 3) {
-                    this.log('✅ [BACK] تم الرجوع بنجاح لقائمة الوظائف');
-                    return true;
-                }
-            }
-            
-            attempts++;
-            await this.wait(2000);
-        }
+        // ✅ انتظار كافي للتحميل
+        await this.wait(5000);
         
-        this.log('🔄 [BACK] محاولة التنقل المباشر...');
-        await this.navigateToJobList();
-        await this.wait(3000);
-        
-        // فحص نهائي
-        const finalPageType = this.detectPageTypeAndLog();
-        return finalPageType === 'jobList';
+        this.log('✅ [BACK] تم التنقل المباشر بنجاح');
+        return true;
         
     } catch (error) {
         this.log('❌ [BACK] خطأ في العودة:', error);
