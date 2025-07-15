@@ -234,16 +234,19 @@ class JadaratAutoStable {
         }
     }
 
-    // استخراج اسم الشركة - فلترة ذكية جداً
+    // استخراج اسم الشركة - فلترة ذكية محسنة
     extractCompanyName(container) {
         this.log('🔍 [COMPANY] استخراج اسم الشركة...');
         
         try {
-            // بناءً على HTML الحقيقي: في بداية البطاقة
+            // بناءً على HTML الحقيقي: البحث عن اسم الشركة الصحيح
             const companySelectors = [
-                'div.font-bold.font-size-base a[data-link] span[data-expression]', // الدقيق
-                'a[data-link][href="#"] span[data-expression]', // الأول في البطاقة
-                'div.display-flex.align-items-center a span[data-expression]' // احتياطي
+                // المحدد الأكثر دقة - أول رابط في البطاقة
+                'div.font-bold.font-size-base:first-child a[data-link] span[data-expression]',
+                // احتياطي - أي رابط يؤدي لـ # (ملف الشركة)
+                'a[data-link][href="#"] span[data-expression]',
+                // احتياطي آخر - البحث في أول منطقة
+                'div.display-flex.align-items-center:first-child a span[data-expression]'
             ];
             
             for (const selector of companySelectors) {
@@ -251,13 +254,27 @@ class JadaratAutoStable {
                 if (companyElement && companyElement.textContent.trim()) {
                     const companyText = companyElement.textContent.trim();
                     
-                    // فلترة ذكية لاستبعاد الأوصاف الوظيفية
+                    // فلترة قوية لاستبعاد نسب التوافق والأوصاف
                     if (this.isValidCompanyName(companyText)) {
                         this.log(`✅ [COMPANY] تم العثور على الشركة: "${companyText}"`);
                         return companyText;
                     } else {
-                        this.log(`⚠️ [COMPANY] تم رفض "${companyText}" (يبدو كوصف وظيفي)`);
+                        this.log(`⚠️ [COMPANY] تم رفض "${companyText}" (لا يبدو كاسم شركة)`);
                     }
+                }
+            }
+            
+            // البحث اليدوي في جميع الروابط للعثور على اسم الشركة
+            this.log('🔍 [COMPANY] البحث اليدوي في جميع الروابط...');
+            const allLinks = container.querySelectorAll('a[data-link] span[data-expression]');
+            
+            for (let i = 0; i < allLinks.length; i++) {
+                const linkText = allLinks[i].textContent.trim();
+                this.log(`🔍 [COMPANY] فحص الرابط ${i + 1}: "${linkText}"`);
+                
+                if (this.isValidCompanyName(linkText)) {
+                    this.log(`✅ [COMPANY] تم العثور على الشركة (بحث يدوي): "${linkText}"`);
+                    return linkText;
                 }
             }
             
@@ -449,6 +466,21 @@ class JadaratAutoStable {
     isValidCompanyName(companyName) {
         if (!companyName || companyName.length < 3 || companyName.length > 200) return false;
         
+        // ❌ استبعاد نسب التوافق
+        if (companyName.startsWith('%') || companyName.endsWith('%')) {
+            return false;
+        }
+        
+        // ❌ استبعاد الأرقام فقط
+        if (/^\d+$/.test(companyName)) {
+            return false;
+        }
+        
+        // ❌ استبعاد التواريخ
+        if (/\d{2}\/\d{2}\/\d{4}/.test(companyName)) {
+            return false;
+        }
+        
         // مدن سعودية (لاستبعادها من أسماء الشركات)
         const saudiCities = ['الرياض', 'جدة', 'الدمام', 'مكة', 'المدينة المنورة', 'الطائف'];
         if (saudiCities.includes(companyName)) return false;
@@ -486,6 +518,7 @@ class JadaratAutoStable {
         const wordCount = companyName.split(' ').length;
         if (wordCount > 10) return false;
         
+        // ✅ اسم شركة صحيح
         return true;
     }
 
@@ -1440,45 +1473,134 @@ class JadaratAutoStable {
                 throw new Error('العنصر غير موجود');
             }
             
-            // التمرير للعنصر
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await this.wait(500);
+            this.log('🔍 [CLICK] فحص العنصر قبل النقر...');
             
-            // التأكد من أن العنصر مرئي
-            if (element.offsetWidth === 0 || element.offsetHeight === 0) {
-                throw new Error('العنصر غير مرئي');
+            // التأكد من وجود العنصر في DOM
+            if (!document.contains(element)) {
+                throw new Error('العنصر غير موجود في الصفحة');
             }
             
-            // النقر بطرق متعددة للتوافق
+            // فحص الرؤية الأساسية
+            const rect = element.getBoundingClientRect();
+            this.log(`📏 [CLICK] مقاسات العنصر: ${rect.width}x${rect.height}`);
+            
+            if (rect.width === 0 || rect.height === 0) {
+                // محاولة البحث عن عنصر بديل قابل للنقر
+                this.log('🔍 [CLICK] العنصر غير مرئي، البحث عن بديل...');
+                
+                const clickableParent = element.closest('a, button, [data-link]');
+                if (clickableParent && clickableParent.getBoundingClientRect().width > 0) {
+                    this.log('✅ [CLICK] تم العثور على عنصر بديل قابل للنقر');
+                    element = clickableParent;
+                } else {
+                    throw new Error('العنصر وجميع العناصر الأبوية غير مرئية');
+                }
+            }
+            
+            // التمرير للعنصر مع انتظار
+            this.log('📜 [CLICK] التمرير للعنصر...');
+            element.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center',
+                inline: 'center'
+            });
+            await this.wait(1000); // انتظار أطول للتمرير
+            
+            // فحص الرؤية مرة أخيرة بعد التمرير
+            const newRect = element.getBoundingClientRect();
+            if (newRect.width === 0 || newRect.height === 0) {
+                this.log('⚠️ [CLICK] العنصر لا يزال غير مرئي بعد التمرير');
+                
+                // محاولة إزالة أي عوائق محتملة
+                const overlays = document.querySelectorAll('.overlay, .modal-backdrop, [style*="position: fixed"]');
+                for (const overlay of overlays) {
+                    if (overlay.style.display !== 'none') {
+                        this.log('🗑️ [CLICK] إخفاء عائق محتمل...');
+                        overlay.style.display = 'none';
+                    }
+                }
+                
+                await this.wait(500);
+            }
+            
+            this.log('🖱️ [CLICK] محاولة النقر...');
+            
+            // النقر بطرق متعددة للتوافق المحسن
             const clickMethods = [
-                () => element.click(),
-                () => element.dispatchEvent(new MouseEvent('click', { 
-                    bubbles: true, 
-                    cancelable: true,
-                    view: window 
-                })),
+                // الطريقة الأساسية
                 () => {
+                    this.log('🖱️ [CLICK] الطريقة 1: النقر المباشر');
+                    element.click();
+                },
+                
+                // النقر مع MouseEvent
+                () => {
+                    this.log('🖱️ [CLICK] الطريقة 2: MouseEvent بسيط');
+                    const event = new MouseEvent('click', { 
+                        bubbles: true, 
+                        cancelable: true,
+                        view: window,
+                        detail: 1
+                    });
+                    element.dispatchEvent(event);
+                },
+                
+                // النقر مع إحداثيات
+                () => {
+                    this.log('🖱️ [CLICK] الطريقة 3: النقر مع الإحداثيات');
+                    const rect = element.getBoundingClientRect();
+                    const x = rect.left + rect.width / 2;
+                    const y = rect.top + rect.height / 2;
+                    
                     const event = new MouseEvent('click', {
                         view: window,
                         bubbles: true,
                         cancelable: true,
+                        clientX: x,
+                        clientY: y,
                         buttons: 1
                     });
                     element.dispatchEvent(event);
+                },
+                
+                // محاولة النقر على الرابط مباشرة
+                () => {
+                    this.log('🖱️ [CLICK] الطريقة 4: النقر على الرابط مباشرة');
+                    if (element.href) {
+                        window.location.href = element.href;
+                    } else {
+                        const link = element.querySelector('a[href]') || element.closest('a[href]');
+                        if (link && link.href) {
+                            window.location.href = link.href;
+                        } else {
+                            throw new Error('لا يوجد رابط للانتقال إليه');
+                        }
+                    }
                 }
             ];
             
-            for (const method of clickMethods) {
+            for (let i = 0; i < clickMethods.length; i++) {
                 try {
-                    method();
-                    await this.wait(300);
-                    return true;
+                    clickMethods[i]();
+                    await this.wait(500);
+                    
+                    // فحص إذا تم الانتقال
+                    await this.wait(1000);
+                    if (window.location.href.includes('JobDetails')) {
+                        this.log(`✅ [CLICK] نجح النقر بالطريقة ${i + 1}`);
+                        return true;
+                    }
+                    
                 } catch (clickError) {
-                    // تجربة الطريقة التالية
+                    this.log(`⚠️ [CLICK] فشلت الطريقة ${i + 1}: ${clickError.message}`);
+                    if (i === clickMethods.length - 1) {
+                        throw clickError;
+                    }
                 }
             }
             
-            throw new Error('فشل في جميع طرق النقر');
+            this.log('✅ [CLICK] تم النقر بنجاح');
+            return true;
             
         } catch (error) {
             this.log('❌ [CLICK] خطأ في النقر:', error);
@@ -1646,16 +1768,17 @@ console.log(`
 ✅ تم تحميل النظام بنجاح
 🛠️ أدوات التشخيص متاحة:
 
-🎯 أدوات التشخيص:
-- window.jadaratAutoHelpers.testPageDetection()  // اختبار التعرف على الصفحة
-- window.jadaratAutoHelpers.testExtraction()     // اختبار استخراج البيانات
-- window.jadaratAutoHelpers.testCard(0)          // اختبار بطاقة محددة
-- window.jadaratAutoHelpers.getStatus()          // عرض الحالة الحالية
-- window.jadaratAutoHelpers.clearData()          // مسح جميع البيانات
+🎯 أدوات التشخيص المُحدثة:
+- window.jadaratAutoHelpers.testPageDetection()     // اختبار التعرف على الصفحة
+- window.jadaratAutoHelpers.testExtraction()        // اختبار استخراج البيانات
+- window.jadaratAutoHelpers.debugCompanyExtraction() // 🔥 تشخيص مشكلة أسماء الشركات
+- window.jadaratAutoHelpers.testCard(0)             // اختبار بطاقة محددة
+- window.jadaratAutoHelpers.getStatus()             // عرض الحالة الحالية
+- window.jadaratAutoHelpers.clearData()             // مسح جميع البيانات
 
-🔧 خطوات التشخيص المُوصى بها:
-1. window.jadaratAutoHelpers.testPageDetection()  // تأكد من التعرف على الصفحة
-2. window.jadaratAutoHelpers.testExtraction()     // تأكد من استخراج البيانات
+🔧 خطوات التشخيص المُحدثة:
+1. window.jadaratAutoHelpers.debugCompanyExtraction() // 🔥 لحل مشكلة أسماء الشركات
+2. window.jadaratAutoHelpers.testExtraction()         // تأكد من استخراج البيانات
 3. إذا نجحت الاختبارات، ابدأ التشغيل من الـ popup
 
 🎯 الميزات الجديدة:
