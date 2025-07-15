@@ -233,37 +233,13 @@ const url = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\ufeff' + fullC
         }
     }
 
-    handleTabUpdate(tabId, changeInfo, tab) {
-        // Check if navigated to Jadarat website
-        if (changeInfo.status === 'complete' && tab.url && tab.url.includes('jadarat.sa')) {
-            // Inject content script if needed
-            this.ensureContentScriptInjected(tabId);
-        }
+handleTabUpdate(tabId, changeInfo, tab) {
+    // مجرد تسجيل تحديث التبويب - بدون حقن
+    if (changeInfo.status === 'complete' && tab.url && tab.url.includes('jadarat.sa')) {
+        console.log('📄 تم تحديث تبويب جدارات:', tab.url);
     }
+}
 
-    async ensureContentScriptInjected(tabId) {
-        try {
-            // Try to ping the content script
-            const response = await chrome.tabs.sendMessage(tabId, { action: 'PING' });
-            if (!response) {
-                // Content script not responding, inject it
-                await chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    files: ['content.js']
-                });
-            }
-        } catch (error) {
-            // Content script not injected, inject it
-            try {
-                await chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    files: ['content.js']
-                });
-            } catch (injectionError) {
-                console.error('Error injecting content script:', injectionError);
-            }
-        }
-    }
 
     handleActionClick(tab) {
         // Open popup programmatically if needed
