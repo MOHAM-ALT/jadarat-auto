@@ -1,6 +1,14 @@
 // جدارات أوتو - النسخة المستقرة مع تسجيل مفصل
 // بناءً على HTML الحقيقي من الموقع
 
+// التأكد من عدم وجود الكلاس مسبقاً
+if (window.JadaratAutoStable) {
+    console.log('🔄 [RELOAD] إعادة تحميل النظام...');
+    delete window.JadaratAutoStable;
+    delete window.jadaratAutoStable;
+    delete window.jadaratAutoHelpers;
+}
+
 class JadaratAutoStable {
     constructor() {
         this.isRunning = false;
@@ -100,15 +108,26 @@ class JadaratAutoStable {
                 return status;
             },
             
-            // مسح البيانات
-            clearData: () => {
-                this.visitedJobs.clear();
-                this.rejectedJobs.clear();
-                this.appliedJobs.clear();
-                this.stats = { applied: 0, skipped: 0, rejected: 0, alreadyApplied: 0, total: 0, errors: 0, fromMemory: 0 };
-                this.saveMemoryData();
-                this.log('🗑️ [CLEAR] تم مسح جميع البيانات');
-            }
+            // اختبار تشخيصي فوري
+            testPageDetection: () => {
+                this.log('🧪 [TEST] اختبار التعرف على الصفحة...');
+                const pageType = this.detectPageTypeAndLog();
+                
+                if (pageType === 'jobList') {
+                    const cards = this.getAllJobCards();
+                    this.log(`📊 [TEST] تم العثور على ${cards.length} بطاقة وظيفة`);
+                    
+                    if (cards.length > 0) {
+                        this.log('✅ [TEST] الصفحة جاهزة للمعالجة');
+                        return { success: true, pageType, cardCount: cards.length };
+                    } else {
+                        this.log('⚠️ [TEST] الصفحة محتاجة وقت إضافي للتحميل');
+                        return { success: false, pageType, reason: 'لا توجد بطاقات' };
+                    }
+                } else {
+                    return { success: true, pageType, message: 'صفحة صحيحة لكن ليست قائمة وظائف' };
+                }
+            },
         };
         
         this.log('🛠️ [TOOLS] تم إضافة أدوات التشخيص: window.jadaratAutoHelpers');
@@ -643,11 +662,14 @@ class JadaratAutoStable {
             this.log(`📨 [MESSAGE] تم استلام رسالة: ${message.action}`);
             
             switch (message.action) {
+                // الرسائل الجديدة المتوقعة من popup
+                case 'START_AUTOMATION':
                 case 'START_AUTO_APPLY':
                     this.startProcess(message.settings);
                     sendResponse({ success: true });
                     break;
                     
+                case 'STOP_AUTOMATION':
                 case 'STOP_AUTO_APPLY':
                     this.stopProcess();
                     sendResponse({ success: true });
@@ -665,6 +687,8 @@ class JadaratAutoStable {
                     this.log(`⚠️ [MESSAGE] رسالة غير معروفة: ${message.action}`);
                     sendResponse({ success: false, error: 'Unknown action' });
             }
+            
+            return true; // مهم للرسائل غير المتزامنة
         });
         
         this.log('📨 [MESSAGE] تم تهيئة مستمع الرسائل');
@@ -674,16 +698,31 @@ class JadaratAutoStable {
         const url = window.location.href;
         let pageType = 'unknown';
         
+        this.log(`🌐 [PAGE] فحص الرابط: ${url}`);
+        
         if (url.includes('JobDetails')) {
             pageType = 'jobDetails';
+            this.log('📄 [PAGE] تم التعرف على صفحة تفاصيل الوظيفة');
         } else if (url.includes('ExploreJobs') || url.includes('JobTab=1')) {
             pageType = 'jobList';
+            this.log('📋 [PAGE] تم التعرف على صفحة قائمة الوظائف');
+            
+            // فحص إضافي للتأكد من وجود الوظائف
+            const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
+            this.log(`📊 [PAGE] عدد روابط الوظائف الموجودة: ${jobLinks.length}`);
+            
+            if (jobLinks.length === 0) {
+                this.log('⚠️ [PAGE] لم يتم العثور على روابط وظائف - قد تحتاج الصفحة وقت إضافي للتحميل');
+            }
+            
         } else if (url === 'https://jadarat.sa/' || url === 'https://jadarat.sa') {
             pageType = 'home';
+            this.log('🏠 [PAGE] تم التعرف على الصفحة الرئيسية');
+        } else {
+            this.log('❓ [PAGE] نوع صفحة غير معروف');
         }
         
-        this.log(`🎯 [PAGE] نوع الصفحة: ${pageType}`);
-        this.log(`🌐 [PAGE] الرابط: ${url}`);
+        this.log(`🎯 [PAGE] نوع الصفحة النهائي: ${pageType}`);
         
         return pageType;
     }
@@ -1568,13 +1607,31 @@ class JadaratAutoStable {
 // 🚀 تهيئة النظام عند التحميل
 // ========================
 
-// التهيئة عند تحميل الصفحة
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        window.jadaratAutoStable = new JadaratAutoStable();
-    });
-} else {
+// التحقق من حالة الصفحة والتهيئة المناسبة
+function initializeSystem() {
+    console.log('🔄 [INIT] تهيئة نظام جدارات أوتو...');
+    
+    // التأكد من عدم وجود نسخة سابقة
+    if (window.jadaratAutoStable) {
+        console.log('🗑️ [INIT] إزالة النسخة السابقة...');
+        try {
+            window.jadaratAutoStable.stopProcess();
+        } catch (e) {
+            // تجاهل الأخطاء
+        }
+    }
+    
+    // إنشاء النسخة الجديدة
     window.jadaratAutoStable = new JadaratAutoStable();
+    
+    console.log('✅ [INIT] تم تهيئة النظام بنجاح');
+}
+
+// تهيئة النظام
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeSystem);
+} else {
+    initializeSystem();
 }
 
 // تصدير للوصول العام
@@ -1589,11 +1646,17 @@ console.log(`
 ✅ تم تحميل النظام بنجاح
 🛠️ أدوات التشخيص متاحة:
 
-📊 أدوات الاختبار:
-- window.jadaratAutoHelpers.testExtraction()  // اختبار استخراج البيانات
-- window.jadaratAutoHelpers.testCard(0)       // اختبار بطاقة محددة
-- window.jadaratAutoHelpers.getStatus()       // عرض الحالة الحالية
-- window.jadaratAutoHelpers.clearData()       // مسح جميع البيانات
+🎯 أدوات التشخيص:
+- window.jadaratAutoHelpers.testPageDetection()  // اختبار التعرف على الصفحة
+- window.jadaratAutoHelpers.testExtraction()     // اختبار استخراج البيانات
+- window.jadaratAutoHelpers.testCard(0)          // اختبار بطاقة محددة
+- window.jadaratAutoHelpers.getStatus()          // عرض الحالة الحالية
+- window.jadaratAutoHelpers.clearData()          // مسح جميع البيانات
+
+🔧 خطوات التشخيص المُوصى بها:
+1. window.jadaratAutoHelpers.testPageDetection()  // تأكد من التعرف على الصفحة
+2. window.jadaratAutoHelpers.testExtraction()     // تأكد من استخراج البيانات
+3. إذا نجحت الاختبارات، ابدأ التشغيل من الـ popup
 
 🎯 الميزات الجديدة:
 ✅ استخراج دقيق للبيانات (95%+ دقة)
