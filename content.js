@@ -769,36 +769,109 @@ class JadaratAutoStable {
         this.log('📨 [MESSAGE] تم تهيئة مستمع الرسائل');
     }
 
-    detectPageTypeAndLog() {
-        const url = window.location.href;
-        let pageType = 'unknown';
+detectPageTypeAndLog() {
+    const url = window.location.href;
+    let pageType = 'unknown';
+    
+    this.log(`🌐 [PAGE] فحص الرابط: ${url}`);
+    
+    if (url.includes('JobDetails')) {
+        pageType = 'jobDetails';
+        this.log('📄 [PAGE] تم التعرف على صفحة تفاصيل الوظيفة');
+    } else if (url.includes('ExploreJobs') || url.includes('JobTab=1')) {
+        pageType = 'jobList';
+        this.log('📋 [PAGE] تم التعرف على صفحة قائمة الوظائف');
         
-        this.log(`🌐 [PAGE] فحص الرابط: ${url}`);
+        const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
+        this.log(`📊 [PAGE] عدد روابط الوظائف الموجودة: ${jobLinks.length}`);
         
-        if (url.includes('JobDetails')) {
-            pageType = 'jobDetails';
-            this.log('📄 [PAGE] تم التعرف على صفحة تفاصيل الوظيفة');
-        } else if (url.includes('ExploreJobs') || url.includes('JobTab=1')) {
-            pageType = 'jobList';
-            this.log('📋 [PAGE] تم التعرف على صفحة قائمة الوظائف');
-            
-            const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
-            this.log(`📊 [PAGE] عدد روابط الوظائف الموجودة: ${jobLinks.length}`);
-            
-            if (jobLinks.length === 0) {
-                this.log('⚠️ [PAGE] لم يتم العثور على روابط وظائف - قد تحتاج الصفحة وقت إضافي للتحميل');
+        if (jobLinks.length === 0) {
+            this.log('⚠️ [PAGE] لم يتم العثور على روابط وظائف - قد تحتاج الصفحة وقت إضافي للتحميل');
+        }
+    } else {
+        // 🔥 إضافة فحص إضافي للتعرف على قائمة الوظائف
+        const pageIndicators = [
+            'span.filter-text:contains("تصفية")',              // من HTML المرفوع
+            'div.osui-accordion-item__title',                  // عنصر التصفية
+            'span.no_of_filter:contains("البحث المحفوظ")',      // نص البحث المحفوظ
+            'i.filter-icon.fa-sliders',                       // أيقونة التصفية
+            'a[href*="JobDetails"]'                           // روابط الوظائف
+        ];
+        
+        let foundIndicators = 0;
+        for (const selector of pageIndicators) {
+            if (selector.includes(':contains')) {
+                // بحث النص يدوياً
+                if (selector.includes('تصفية')) {
+                    const filterElements = document.querySelectorAll('span');
+                    for (const span of filterElements) {
+                        if (span.textContent.includes('تصفية')) {
+                            foundIndicators++;
+                            break;
+                        }
+                    }
+                } else if (selector.includes('البحث المحفوظ')) {
+                    const searchElements = document.querySelectorAll('span');
+                    for (const span of searchElements) {
+                        if (span.textContent.includes('البحث المحفوظ')) {
+                            foundIndicators++;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                if (document.querySelector(selector)) {
+                    foundIndicators++;
+                }
             }
-            
+        }
+        
+        if (foundIndicators >= 2) {
+            pageType = 'jobList';
+            this.log('📋 [PAGE] تم التعرف على قائمة الوظائف (فحص إضافي)');
         } else if (url === 'https://jadarat.sa/' || url === 'https://jadarat.sa') {
             pageType = 'home';
             this.log('🏠 [PAGE] تم التعرف على الصفحة الرئيسية');
         } else {
             this.log('❓ [PAGE] نوع صفحة غير معروف');
         }
-        
-        this.log(`🎯 [PAGE] نوع الصفحة النهائي: ${pageType}`);
-        return pageType;
     }
+    
+    this.log(`🎯 [PAGE] نوع الصفحة النهائي: ${pageType}`);
+    return pageType;
+}
+
+async waitForPageLoad() {
+    this.log('⏳ [LOAD] انتظار تحميل الصفحة المُحسن...');
+    
+    const maxAttempts = 20; // زيادة المحاولات
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+        // فحص متعدد المؤشرات
+        const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
+        const filterElements = document.querySelectorAll('span.filter-text, .osui-accordion-item__title');
+        const pageLoaded = document.readyState === 'complete';
+        
+        if (jobLinks.length >= 3 || filterElements.length >= 1) {
+            this.log('✅ [LOAD] تم تحميل الصفحة بنجاح');
+            await this.wait(2000); // انتظار إضافي للاستقرار
+            return true;
+        }
+        
+        if (pageLoaded && attempts > 10) {
+            // إذا كانت الصفحة محملة لكن بدون وظائف
+            this.log('⚠️ [LOAD] الصفحة محملة لكن قد لا توجد وظائف');
+            return true;
+        }
+        
+        attempts++;
+        await this.wait(1000);
+    }
+    
+    this.log('⚠️ [LOAD] انتهت مهلة انتظار تحميل الصفحة');
+    return false;
+}
 
     getStatus() {
         return {
@@ -1316,38 +1389,44 @@ class JadaratAutoStable {
     // 🔄 التنقل والعودة المُحسنة
     // ========================
     
-    async goBackToJobList() {
-        this.log('🔙 [BACK] العودة لقائمة الوظائف...');
+async goBackToJobList() {
+    this.log('🔙 [BACK] العودة لقائمة الوظائف...');
+    
+    try {
+        window.history.back();
+        await this.wait(4000); // زيادة وقت الانتظار
         
-        try {
-            window.history.back();
-            await this.wait(3000);
+        const maxAttempts = 12; // زيادة المحاولات
+        let attempts = 0;
+        
+        while (attempts < maxAttempts) {
+            const pageType = this.detectPageTypeAndLog(); // فحص فوري للصفحة
             
-            const maxAttempts = 8;
-            let attempts = 0;
-            
-            while (attempts < maxAttempts) {
-                if (window.location.href.includes('ExploreJobs') || window.location.href.includes('JobTab=1')) {
-                    const jobCards = document.querySelectorAll('a[href*="JobDetails"]');
-                    if (jobCards.length >= 5) {
-                        this.log('✅ [BACK] تم الرجوع بنجاح لقائمة الوظائف');
-                        return true;
-                    }
+            if (pageType === 'jobList') {
+                const jobCards = document.querySelectorAll('a[href*="JobDetails"]');
+                if (jobCards.length >= 3) {
+                    this.log('✅ [BACK] تم الرجوع بنجاح لقائمة الوظائف');
+                    return true;
                 }
-                
-                attempts++;
-                await this.wait(2000);
             }
             
-            this.log('🔄 [BACK] محاولة التنقل المباشر...');
-            await this.navigateToJobList();
-            return true;
-            
-        } catch (error) {
-            this.log('❌ [BACK] خطأ في العودة:', error);
-            return false;
+            attempts++;
+            await this.wait(2000);
         }
+        
+        this.log('🔄 [BACK] محاولة التنقل المباشر...');
+        await this.navigateToJobList();
+        await this.wait(3000);
+        
+        // فحص نهائي
+        const finalPageType = this.detectPageTypeAndLog();
+        return finalPageType === 'jobList';
+        
+    } catch (error) {
+        this.log('❌ [BACK] خطأ في العودة:', error);
+        return false;
     }
+}
 
     async navigateToJobList() {
         this.log('🧭 [NAVIGATE] التنقل لقائمة الوظائف...');
@@ -1857,19 +1936,8 @@ class JadaratAutoStable {
             
             clearData: async () => {
                 this.log('🗑️ [CLEAR] مسح جميع البيانات...');
-                
 
-                
-                this.stats = {
-                    applied: 0,
-                    skipped: 0,
-                    rejected: 0,
-                    alreadyApplied: 0,
-                    total: 0,
-                    errors: 0,
-                    fromMemory: 0,
-                    dataExtractionErrors: 0
-                };
+            
                 
                 this.log('✅ [CLEAR] تم مسح جميع البيانات');
             }
