@@ -123,7 +123,7 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // دالة استخراج البيانات الأساسية
+        // دالة استخراج البيانات الأساسية (مُصححة ومُحسنة)
         // ===============================
 
         extractJobDataFromHTML(jobCard) {
@@ -145,44 +145,171 @@ if (window.jadaratAutoContentLoaded) {
                     availableJobs: null
                 };
 
-                // استخراج اسم الشركة
-                const companySpans = container.querySelectorAll('span[data-expression]');
-                for (const span of companySpans) {
-                    const text = span.textContent?.trim();
-                    if (text && text !== jobCard.title && text.length > 3 && 
-                        !text.includes('%') && !text.match(/\d{2}\/\d{2}\/\d{4}/) && 
-                        !text.match(/^\d+$/)) {
-                        jobData.company = text;
-                        break;
+                // استخراج جميع العناصر النصية
+                const allSpans = container.querySelectorAll('span[data-expression]');
+                this.debugLog(`🔍 وجد ${allSpans.length} عنصر span[data-expression]`);
+
+                // استخراج اسم الشركة - الطريقة المُحسنة
+                jobData.company = this.extractCompanyFromContainer(container, jobCard.title);
+
+                // استخراج نسبة التوافق
+                const matchElement = container.querySelector('span.matching_score, .matching_score span');
+                if (matchElement && matchElement.textContent?.trim()) {
+                    jobData.matchingScore = matchElement.textContent.trim();
+                    this.debugLog(`📊 نسبة التوافق: ${jobData.matchingScore}`);
+                } else {
+                    // البحث في النص العام عن النسبة
+                    for (const span of allSpans) {
+                        const text = span.textContent?.trim();
+                        if (text && text.includes('%')) {
+                            jobData.matchingScore = text;
+                            this.debugLog(`📊 نسبة التوافق (عام): ${jobData.matchingScore}`);
+                            break;
+                        }
                     }
                 }
 
-                // استخراج نسبة التوافق
-                const matchElement = container.querySelector('span.matching_score');
-                if (matchElement && matchElement.textContent?.trim()) {
-                    jobData.matchingScore = matchElement.textContent.trim();
-                }
+                // استخراج المدينة
+                jobData.city = this.extractCityFromContainer(container);
 
-                // استخراج البيانات الأخرى من النصوص
-                const allText = container.textContent || '';
+                // استخراج عدد الوظائف المتاحة  
+                jobData.availableJobs = this.extractJobCountFromContainer(container);
                 
-                // استخراج التاريخ
-                const dateMatch = allText.match(/(\d{2}\/\d{2}\/\d{4})/);
-                if (dateMatch) {
-                    jobData.publishDate = dateMatch[1];
-                }
+                // استخراج تاريخ النشر
+                jobData.publishDate = this.extractDateFromContainer(container);
 
                 this.debugLog(`✅ البصمة المستخرجة:`);
                 this.debugLog(`   🏢 ${jobData.company}`);
                 this.debugLog(`   💼 ${jobData.title}`);
                 this.debugLog(`   📊 ${jobData.matchingScore || 'غير محدد'}`);
+                this.debugLog(`   🏙️ ${jobData.city || 'غير محدد'}`);
                 this.debugLog(`   📅 ${jobData.publishDate || 'غير محدد'}`);
+                this.debugLog(`   📈 ${jobData.availableJobs || 'غير محدد'}`);
 
                 return jobData;
                 
             } catch (error) {
                 this.debugLog('❌ خطأ في استخراج البيانات:', error);
                 return this.getMinimalJobData(jobCard);
+            }
+        }
+
+        // ===============================
+        // دوال استخراج البيانات المساعدة
+        // ===============================
+
+        extractCompanyFromContainer(container, jobTitle) {
+            try {
+                // الطريقة 1: البحث في الرابط الأول (عادة اسم الشركة)
+                const firstLink = container.querySelector('a[data-link]');
+                if (firstLink) {
+                    const linkSpan = firstLink.querySelector('span[data-expression]');
+                    if (linkSpan && linkSpan.textContent?.trim()) {
+                        const companyText = linkSpan.textContent.trim();
+                        if (companyText !== jobTitle && companyText.length > 3 && 
+                            !companyText.includes('%') && !companyText.match(/\d{2}\/\d{2}\/\d{4}/)) {
+                            this.debugLog(`🏢 الشركة (من الرابط): ${companyText}`);
+                            return companyText;
+                        }
+                    }
+                }
+
+                // الطريقة 2: البحث في font-bold font-size-base
+                const boldElements = container.querySelectorAll('.font-bold.font-size-base span[data-expression]');
+                for (const element of boldElements) {
+                    const text = element.textContent?.trim();
+                    if (text && text !== jobTitle && text.length > 3 && 
+                        !text.includes('%') && !text.match(/\d{2}\/\d{2}\/\d{4}/) && 
+                        !text.match(/^\d+$/)) {
+                        this.debugLog(`🏢 الشركة (من العنصر الجريء): ${text}`);
+                        return text;
+                    }
+                }
+
+                // الطريقة 3: البحث في أول span[data-expression] مناسب
+                const allSpans = container.querySelectorAll('span[data-expression]');
+                for (const span of allSpans) {
+                    const text = span.textContent?.trim();
+                    if (text && text !== jobTitle && text.length > 3 && text.length < 100 &&
+                        !text.includes('%') && !text.match(/\d{2}\/\d{2}\/\d{4}/) && 
+                        !text.match(/^\d+$/) && !text.includes('المدينة') && 
+                        !text.includes('الوظائف') && !text.includes('تاريخ') &&
+                        !text.includes('تنفيذ الإجراءات')) {
+                        this.debugLog(`🏢 الشركة (عام): ${text}`);
+                        return text;
+                    }
+                }
+
+                this.debugLog(`🏢 لم يتم العثور على اسم الشركة`);
+                return 'شركة غير محددة';
+                
+            } catch (error) {
+                this.debugLog('❌ خطأ في استخراج اسم الشركة:', error);
+                return 'شركة غير محددة';
+            }
+        }
+
+        extractCityFromContainer(container) {
+            try {
+                // البحث عن نص "المدينة" ثم البحث في نفس المنطقة
+                const containerText = container.textContent || '';
+                if (containerText.includes('المدينة')) {
+                    // البحث في العناصر القريبة من نص "المدينة"
+                    const cityElements = container.querySelectorAll('span[data-expression]');
+                    for (const element of cityElements) {
+                        const text = element.textContent?.trim();
+                        // البحث عن أسماء مدن سعودية شائعة
+                        const saudiCities = ['الرياض', 'جدة', 'الدمام', 'مكة', 'المدينة', 'الطائف', 'تبوك', 'الخبر', 'الظهران', 'القطيف'];
+                        if (text && saudiCities.some(city => text.includes(city))) {
+                            this.debugLog(`🏙️ المدينة: ${text}`);
+                            return text;
+                        }
+                    }
+                }
+                return null;
+            } catch (error) {
+                this.debugLog('❌ خطأ في استخراج المدينة:', error);
+                return null;
+            }
+        }
+
+        extractJobCountFromContainer(container) {
+            try {
+                const containerText = container.textContent || '';
+                if (containerText.includes('الوظائف المتاحة')) {
+                    const spans = container.querySelectorAll('span[data-expression]');
+                    for (const span of spans) {
+                        const text = span.textContent?.trim();
+                        if (text && /^\d+$/.test(text) && parseInt(text) > 0 && parseInt(text) < 1000) {
+                            this.debugLog(`📈 الوظائف المتاحة: ${text}`);
+                            return text;
+                        }
+                    }
+                }
+                return null;
+            } catch (error) {
+                this.debugLog('❌ خطأ في استخراج عدد الوظائف:', error);
+                return null;
+            }
+        }
+
+        extractDateFromContainer(container) {
+            try {
+                const containerText = container.textContent || '';
+                if (containerText.includes('تاريخ النشر')) {
+                    const spans = container.querySelectorAll('span[data-expression]');
+                    for (const span of spans) {
+                        const text = span.textContent?.trim();
+                        if (text && /\d{2}\/\d{2}\/\d{4}/.test(text)) {
+                            this.debugLog(`📅 تاريخ النشر: ${text}`);
+                            return text;
+                        }
+                    }
+                }
+                return null;
+            } catch (error) {
+                this.debugLog('❌ خطأ في استخراج التاريخ:', error);
+                return null;
             }
         }
 
@@ -327,35 +454,61 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // استخراج عنوان الوظيفة
+        // استخراج عنوان الوظيفة (مُصحح)
         // ===============================
 
         getJobTitle(link) {
             try {
-                // البحث في النص المباشر للرابط
+                this.debugLog(`🔍 استخراج عنوان الوظيفة من الرابط`);
+                
+                // الطريقة 1: البحث في span.heading4 داخل الرابط
+                const headingSpan = link.querySelector('span.heading4');
+                if (headingSpan && headingSpan.textContent?.trim()) {
+                    const title = headingSpan.textContent.trim();
+                    if (title.length > 3 && !title.includes('...')) {
+                        this.debugLog(`✅ عنوان من heading4: ${title}`);
+                        return title;
+                    }
+                }
+
+                // الطريقة 2: البحث في أي span[data-expression] داخل الرابط
+                const dataSpans = link.querySelectorAll('span[data-expression]');
+                for (const span of dataSpans) {
+                    const text = span.textContent?.trim();
+                    if (text && text.length > 5 && !text.includes('%') && 
+                        !text.match(/\d{2}\/\d{2}\/\d{4}/) && !text.includes('...')) {
+                        // التأكد أنه ليس نسبة توافق أو تاريخ
+                        if (!text.match(/^\d+$/) && !span.classList.contains('matching_score')) {
+                            this.debugLog(`✅ عنوان من data-expression: ${text}`);
+                            return text;
+                        }
+                    }
+                }
+
+                // الطريقة 3: البحث في النص المباشر للرابط
                 if (link.textContent && link.textContent.trim()) {
-                    const title = link.textContent.trim();
-                    if (title.length > 5) {
-                        return title;
+                    const directText = link.textContent.trim();
+                    // تنظيف النص من النسب والأرقام
+                    const cleanText = directText.split('\n')[0].split('%')[0].trim();
+                    if (cleanText.length > 5 && !cleanText.includes('...')) {
+                        this.debugLog(`✅ عنوان من النص المباشر: ${cleanText}`);
+                        return cleanText;
                     }
                 }
 
-                // البحث في العناصر الفرعية
-                const titleElement = link.querySelector('span, div, h3, h4');
-                if (titleElement && titleElement.textContent) {
-                    const title = titleElement.textContent.trim();
-                    if (title.length > 5) {
-                        return title;
+                // الطريقة 4: استخراج من URL كاحتياطي
+                if (link.href) {
+                    const urlMatch = link.href.match(/JobTitle=([^&]+)/);
+                    if (urlMatch) {
+                        const decodedTitle = decodeURIComponent(urlMatch[1]);
+                        this.debugLog(`✅ عنوان من URL: ${decodedTitle}`);
+                        return decodedTitle;
                     }
                 }
 
-                // استخراج من URL كاحتياطي
-                const urlMatch = link.href.match(/JobTitle=([^&]+)/);
-                if (urlMatch) {
-                    return decodeURIComponent(urlMatch[1]);
-                }
-
+                this.debugLog('⚠️ لم يتم العثور على عنوان واضح');
                 return 'وظيفة غير محددة';
+                
             } catch (error) {
                 this.debugLog('❌ خطأ في استخراج العنوان:', error);
                 return 'وظيفة غير محددة';
@@ -363,28 +516,53 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         // ===============================
-        // إيجاد حاوي الوظيفة
+        // إيجاد حاوي الوظيفة (مُصحح)
         // ===============================
 
         findJobContainer(link) {
             try {
-                // البحث عن أقرب حاوي بـ data-container
+                this.debugLog(`🔍 البحث عن حاوي الوظيفة`);
+                
+                // الطريقة 1: البحث عن أقرب حاوي بـ data-container يحتوي على بيانات كاملة
                 let container = link.closest('[data-container]');
                 
-                if (!container) {
-                    // البحث في الحاويات الشائعة
-                    container = link.closest('div[class*="job"], div[class*="card"], .job-item');
-                }
-
-                if (!container) {
-                    // استخدام الحاوي الأب المباشر
-                    container = link.parentElement;
-                    while (container && container.children.length < 3) {
-                        container = container.parentElement;
+                // التأكد من أن الحاوي يحتوي على بيانات كافية
+                while (container && container.parentElement) {
+                    const containerText = container.textContent || '';
+                    const hasCompanyInfo = container.querySelector('span[data-expression]');
+                    const hasMultipleData = container.querySelectorAll('span[data-expression]').length >= 3;
+                    
+                    if (hasCompanyInfo && hasMultipleData) {
+                        this.debugLog(`✅ وجد حاوي مناسب مع ${container.querySelectorAll('span[data-expression]').length} عناصر بيانات`);
+                        return container;
                     }
+                    
+                    container = container.parentElement.closest('[data-container]');
                 }
 
-                return container;
+                // الطريقة 2: البحث في الحاويات الشائعة
+                let currentElement = link.parentElement;
+                let attempts = 0;
+                
+                while (currentElement && attempts < 10) {
+                    const dataSpans = currentElement.querySelectorAll('span[data-expression]');
+                    const hasJobData = currentElement.textContent?.includes('المدينة') || 
+                                     currentElement.textContent?.includes('الوظائف المتاحة') ||
+                                     currentElement.textContent?.includes('تاريخ النشر');
+                    
+                    if (dataSpans.length >= 3 && hasJobData) {
+                        this.debugLog(`✅ وجد حاوي بديل مع ${dataSpans.length} عناصر بيانات`);
+                        return currentElement;
+                    }
+                    
+                    currentElement = currentElement.parentElement;
+                    attempts++;
+                }
+
+                // الطريقة 3: استخدام الحاوي الأب المباشر كأخر حل
+                this.debugLog('⚠️ استخدام الحاوي الأب المباشر');
+                return link.closest('[data-container]') || link.parentElement;
+                
             } catch (error) {
                 this.debugLog('❌ خطأ في إيجاد الحاوي:', error);
                 return link.parentElement;
@@ -428,11 +606,26 @@ if (window.jadaratAutoContentLoaded) {
         }
 
         markJobAsVisited(jobCard) {
-            const identifiers = this.generateJobIdentifiers(jobCard);
-            for (const id of identifiers) {
-                this.visitedJobs.add(id);
+            try {
+                const identifiers = this.generateJobIdentifiers(jobCard);
+                let addedCount = 0;
+                
+                for (const id of identifiers) {
+                    if (!this.visitedJobs.has(id)) {
+                        this.visitedJobs.add(id);
+                        addedCount++;
+                    }
+                }
+                
+                if (addedCount > 0) {
+                    this.saveVisitedJobs();
+                    this.debugLog(`📝 أضيف ${addedCount} معرف جديد للوظائف المزارة`);
+                } else {
+                    this.debugLog(`📝 الوظيفة مسجلة مسبقاً في المزارة`);
+                }
+            } catch (error) {
+                this.debugLog('❌ خطأ في تسجيل الوظيفة كمزارة:', error);
             }
-            this.saveVisitedJobs();
         }
 
         // ===============================
@@ -600,34 +793,77 @@ if (window.jadaratAutoContentLoaded) {
             }
         }
 
-        // البحث عن رابط محدث للوظيفة
+        // البحث عن رابط محدث للوظيفة (مُصحح)
         findFreshJobLink(jobCard) {
             try {
-                // البحث بالعنوان أولاً
+                this.debugLog(`🔍 البحث عن رابط محدث لـ: ${jobCard.title}`);
+                
+                // الطريقة 1: البحث بالعنوان الدقيق
                 const allLinks = document.querySelectorAll('a[href*="JobDetails"]');
                 
                 for (const link of allLinks) {
                     const linkTitle = this.getJobTitle(link);
                     if (linkTitle === jobCard.title) {
                         const isVisible = link.offsetWidth > 0 && link.offsetHeight > 0;
-                        if (isVisible) {
+                        const rect = link.getBoundingClientRect();
+                        if (isVisible && rect.width > 0 && rect.height > 0) {
                             this.debugLog(`✅ وجد رابط محدث مرئي: ${linkTitle}`);
                             return link;
                         }
                     }
                 }
                 
-                // إذا لم نجد، استخدم الرابط الأصلي
-                if (jobCard.link && jobCard.link.offsetWidth > 0) {
+                // الطريقة 2: البحث بـ URL مشابه
+                if (jobCard.link && jobCard.link.href) {
+                    const originalParam = this.extractParamFromUrl(jobCard.link.href);
+                    if (originalParam) {
+                        for (const link of allLinks) {
+                            const linkParam = this.extractParamFromUrl(link.href);
+                            if (linkParam === originalParam) {
+                                const isVisible = link.offsetWidth > 0 && link.offsetHeight > 0;
+                                if (isVisible) {
+                                    this.debugLog(`✅ وجد رابط بنفس المعامل: ${originalParam}`);
+                                    return link;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // الطريقة 3: البحث بالعنوان المشابه (للوظائف المكررة)
+                for (const link of allLinks) {
+                    const linkTitle = this.getJobTitle(link);
+                    if (linkTitle && linkTitle.includes(jobCard.title.split(' ')[0])) {
+                        const isVisible = link.offsetWidth > 0 && link.offsetHeight > 0;
+                        if (isVisible) {
+                            this.debugLog(`✅ وجد رابط مشابه: ${linkTitle}`);
+                            return link;
+                        }
+                    }
+                }
+                
+                // الطريقة 4: استخدام الرابط الأصلي إذا كان مرئياً
+                if (jobCard.link && jobCard.link.offsetWidth > 0 && jobCard.link.offsetHeight > 0) {
                     this.debugLog('⚠️ استخدام الرابط الأصلي');
                     return jobCard.link;
                 }
                 
+                this.debugLog('❌ لم يتم العثور على رابط مناسب');
                 return null;
                 
             } catch (error) {
                 this.debugLog('❌ خطأ في البحث عن رابط محدث:', error);
                 return jobCard.link;
+            }
+        }
+
+        // استخراج معامل URL للمقارنة
+        extractParamFromUrl(url) {
+            try {
+                const match = url.match(/Param=([^&]+)/);
+                return match ? match[1] : null;
+            } catch (error) {
+                return null;
             }
         }
 
