@@ -1,6 +1,8 @@
+console.log('🛡️ [JadaratAuto] content.js loaded');
 if (window.JadaratAutoStable) {
     console.log("JadaratAutoStable is already running.");
 } else {
+    console.log('🚀 [JadaratAuto] Initializing JadaratAutoStable...');
     class JadaratAutoStable {
         constructor() {
             this.stats = {

@@ -131,6 +131,7 @@ class JadaratAutoPopup {
     async initializeConnection() {
         console.log('🔍 Initializing connection...');
         this.showLoadingOverlay();
+        this.disableAllControls();
         try {
             const [tab] = await chrome.tabs.query({
                 active: true,
@@ -162,14 +163,13 @@ class JadaratAutoPopup {
         this.isConnected = false;
 
         try {
-            // First, try to ping the content script to see if it's already injected
+            console.log('Pinging content script...');
             await this.sendMessageWithTimeout({
                 action: 'PING'
             }, 1000);
             console.log('✅ Content script already active.');
             this.handleSuccessfulConnection();
         } catch (error) {
-            // If ping fails, inject the script
             console.log('💉 Content script not found, injecting...');
             try {
                 await chrome.scripting.executeScript({
@@ -178,17 +178,20 @@ class JadaratAutoPopup {
                     },
                     files: ['content.js']
                 });
-                // Wait for the script to load and then ping again
-                await this.delay(1000);
+                console.log('✅ Content script injected.');
+                await this.delay(1000); // Wait for script to load
+                console.log('Pinging content script again...');
                 await this.sendMessageWithTimeout({
                     action: 'PING'
                 }, 2000);
                 this.handleSuccessfulConnection();
             } catch (injectionError) {
+                console.error('❌ Injection failed:', injectionError);
                 this.handleConnectionFailure(injectionError);
             }
         }
     }
+
 
     async sendMessageWithTimeout(message, timeoutMs = 5000) {
         return new Promise((resolve, reject) => {
@@ -337,7 +340,8 @@ class JadaratAutoPopup {
 
     async startAutomation() {
         if (!this.isConnected) {
-            await this.ensureConnection();
+            this.showError("Not connected to the page. Please try again.");
+            return;
         }
         this.isRunning = true;
         this.isPaused = false;
