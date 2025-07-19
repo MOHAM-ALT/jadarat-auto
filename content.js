@@ -263,57 +263,36 @@ class JadaratAutoStable {
     }
 
     extractCompanyName(container, currentTitle = null) {
-        this.log('🔍 [COMPANY] استخراج اسم الشركة المُصلح...');
+        this.log('🔍 [COMPANY] Extracting company name...');
 
         try {
-            const companySelectors = [
-                'div.display-flex.align-items-center.margin-bottom-s a[data-link][href="#"] span[data-expression]',
-                'div.font-bold.font-size-base:first-child a[data-link] span[data-expression]',
-                'a[data-link][href="#"] span[data-expression]'
-            ];
+            const companySelector = 'div.font-bold.font-size-base a[data-link] span[data-expression]';
+            const companyElement = container.querySelector(companySelector);
 
-            for (const selector of companySelectors) {
-                const companyElement = container.querySelector(selector);
-                if (companyElement && companyElement.textContent.trim()) {
-                    const companyText = companyElement.textContent.trim();
-
-                    if (this.isValidCompanyName(companyText, currentTitle)) {
-                        this.log(`✅ [COMPANY] تم العثور على الشركة: "${companyText}"`);
-                        return companyText;
-                    } else {
-                        this.log(`⚠️ [COMPANY] تم رفض "${companyText}" (${this.getCompanyRejectionReason(companyText, currentTitle)})`);
-                    }
+            if (companyElement && companyElement.textContent.trim()) {
+                const companyText = companyElement.textContent.trim();
+                if (this.isValidCompanyName(companyText, currentTitle)) {
+                    this.log(`✅ [COMPANY] Found company: "${companyText}"`);
+                    return companyText;
                 }
             }
 
-            this.log('🔍 [COMPANY] البحث اليدوي المُحسن...');
-            const allLinks = container.querySelectorAll('a[data-link] span[data-expression]');
-            const validCompanies = [];
+            this.log('⚠️ [COMPANY] Could not find a valid company name with the primary selector. Trying fallback methods...');
 
-            for (let i = 0; i < allLinks.length; i++) {
-                const linkText = allLinks[i].textContent.trim();
-
-                if (this.isValidCompanyName(linkText, currentTitle)) {
-                    validCompanies.push({
-                        text: linkText,
-                        index: i,
-                        element: allLinks[i]
-                    });
-                    this.log(`✅ [COMPANY] عثر على شركة محتملة ${validCompanies.length}: "${linkText}"`);
+            const allSpans = container.querySelectorAll('span[data-expression]');
+            for (const span of allSpans) {
+                const text = span.textContent.trim();
+                if (this.isValidCompanyName(text, currentTitle)) {
+                    this.log(`✅ [COMPANY] Found company with fallback: "${text}"`);
+                    return text;
                 }
             }
 
-            if (validCompanies.length > 0) {
-                const bestCompany = validCompanies[0].text;
-                this.log(`✅ [COMPANY] تم اختيار الشركة: "${bestCompany}"`);
-                return bestCompany;
-            }
-
-            this.log('⚠️ [COMPANY] لم يتم العثور على اسم شركة صحيح');
+            this.log('⚠️ [COMPANY] No valid company name found');
             return 'شركة غير محددة';
 
         } catch (error) {
-            this.log('❌ [COMPANY] خطأ في استخراج اسم الشركة:', error);
+            this.log('❌ [COMPANY] Error extracting company name:', error);
             return 'شركة غير محددة';
         }
     }
@@ -829,26 +808,26 @@ detectPageTypeAndLog() {
     const url = window.location.href;
     let pageType = 'unknown';
 
-    // ✅ تسجيل أقل لتجنب spam في console
-    if (url.includes('JobDetails')) {
+    // 1. Check URL first
+    if (url.includes('/JobDetails')) {
         pageType = 'jobDetails';
-        this.log('📄 [PAGE] تم التعرف على صفحة تفاصيل الوظيفة');
-    } else if (url.includes('ExploreJobs') || url.includes('JobTab=1')) {
+    } else if (url.includes('/ExploreJobs') || url.includes('JobTab=1')) {
         pageType = 'jobList';
-        this.log('📋 [PAGE] تم التعرف على صفحة قائمة الوظائف');
-
-        const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
-        this.log(`📊 [PAGE] عدد روابط الوظائف الموجودة: ${jobLinks.length}`);
-    } else if (url === 'https://jadarat.sa/' || url === 'https://jadarat.sa') {
+    } else if (url.includes('/Home')) {
         pageType = 'home';
-        this.log('🏠 [PAGE] تم التعرف على الصفحة الرئيسية');
-    } else {
-        this.log(`❓ [PAGE] نوع صفحة غير معروف: ${url}`);
     }
 
-    // ✅ تسجيل النتيجة النهائية فقط عند تغيير نوع الصفحة
+    // 2. Check page elements as a fallback
+    if (pageType === 'unknown') {
+        if (document.querySelector('a[href*="JobDetails"]')) {
+            pageType = 'jobList';
+        } else if (document.querySelector('.job-details-container')) {
+            pageType = 'jobDetails';
+        }
+    }
+
     if (this.lastPageType !== pageType) {
-        this.log(`🎯 [PAGE] نوع الصفحة النهائي: ${pageType}`);
+        this.log(`🎯 [PAGE] Page type detected: ${pageType}`);
         this.lastPageType = pageType;
     }
 
@@ -1630,6 +1609,9 @@ async waitForPageLoad() {
 
                 () => {
                     this.log('🖱️ [CLICK] الطريقة 4: التنقل المباشر');
+                    if (element.tagName.toLowerCase() === 'button') {
+                        throw new Error('Buttons do not support direct navigation');
+                    }
                     if (element.href) {
                         window.location.href = element.href;
                     } else {
