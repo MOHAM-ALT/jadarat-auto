@@ -211,7 +211,7 @@ constructor() {
                 await this.delay(2000 + (attempt * 1000));
 
                 // محاولة ping
-                const response = await this.sendMessageWithTimeout({ action: 'PING' }, 4000);
+                const response = await this.sendSimpleMessage({ action: 'PING' }, 4000);
 
                 if (response && response.status === 'active') {
                     console.log('✅ نجح الاتصال!');
@@ -231,13 +231,53 @@ constructor() {
         }
     }
 
+    async sendSimpleMessage(message, timeoutMs = 5000) {
+        return new Promise((resolve, reject) => {
+            let isResolved = false;
+
+            const timeoutId = setTimeout(() => {
+                if (!isResolved) {
+                    isResolved = true;
+                    reject(new Error('Message timeout'));
+                }
+            }, timeoutMs);
+
+            try {
+                chrome.tabs.sendMessage(this.currentTab.id, message, (response) => {
+                    if (!isResolved) {
+                        isResolved = true;
+                        clearTimeout(timeoutId);
+
+                        if (chrome.runtime.lastError) {
+                            // تجاهل أخطاء الاتصال العادية
+                            if (chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
+                                reject(new Error('Content script not loaded'));
+                            } else {
+                                reject(new Error(chrome.runtime.lastError.message));
+                            }
+                            return;
+                        }
+
+                        resolve(response || { status: 'no_response' });
+                    }
+                });
+            } catch (error) {
+                if (!isResolved) {
+                    isResolved = true;
+                    clearTimeout(timeoutId);
+                    reject(error);
+                }
+            }
+        });
+    }
+
     async injectContentScriptOnce() {
         try {
             console.log('💉 حقن content script (مرة واحدة)...');
 
             // فحص إذا كان محقون مسبقاً
             try {
-                const existingResponse = await this.sendMessageWithTimeout({ action: 'PING' }, 1000);
+                const existingResponse = await this.sendSimpleMessage({ action: 'PING' }, 1000);
                 if (existingResponse && existingResponse.status === 'active') {
                     console.log('✅ content script موجود مسبقاً');
                     return;
