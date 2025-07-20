@@ -134,10 +134,11 @@ constructor() {
             return false; // إنهاء القناة فوراً
         });
 
-        // مراقبة تغيير التبويب
+        // Listen for tab updates
         chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-            if (tabId === this.currentTab?.id && changeInfo.status === 'complete') {
-                setTimeout(() => this.checkConnection(), 2000);
+            if (this.currentTab && tabId === this.currentTab.id && changeInfo.status === 'complete') {
+                console.log('Tab updated, checking connection...');
+                this.checkConnection();
             }
         });
 
@@ -487,20 +488,16 @@ constructor() {
     }
 
     async checkConnection() {
-        if (!this.isConnected) return;
-
+        if (!this.currentTab) return;
         try {
-            const response = await this.sendMessageWithTimeout({ action: 'PING' }, 3000);
-
-            if (!response || response.status !== 'active') {
-                console.log('⚠️ فقدان الاتصال، محاولة إعادة الاتصال...');
+            await this.sendSimpleMessage({ action: 'PING' }, 1000);
+        } catch (error) {
+            if (this.isConnected) {
+                console.log('⚠️ Connection lost, attempting to reconnect...');
                 this.isConnected = false;
+                this.updateConnectionStatus('disconnected', 'Connection lost. Retrying...');
                 await this.reconnectToContentScript();
             }
-        } catch (error) {
-            console.log('⚠️ خطأ في فحص الاتصال:', error.message);
-            this.isConnected = false;
-            await this.reconnectToContentScript();
         }
     }
 

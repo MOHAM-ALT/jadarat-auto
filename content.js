@@ -266,24 +266,31 @@ class JadaratAutoStable {
         this.log('🔍 [COMPANY] Extracting company name...');
 
         try {
-            const companySelector = 'div.font-bold.font-size-base a[data-link] span[data-expression]';
-            const companyElement = container.querySelector(companySelector);
+            // New, more specific selector
+            const primarySelector = 'div.display-flex.align-items-center.margin-bottom-s div.font-bold.font-size-base a[data-link] span[data-expression]';
+            let companyElement = container.querySelector(primarySelector);
 
-            if (companyElement && companyElement.textContent.trim()) {
-                const companyText = companyElement.textContent.trim();
-                if (this.isValidCompanyName(companyText, currentTitle)) {
-                    this.log(`✅ [COMPANY] Found company: "${companyText}"`);
-                    return companyText;
-                }
+            if (companyElement && this.isValidCompanyName(companyElement.textContent.trim(), currentTitle)) {
+                this.log(`✅ [COMPANY] Found company with primary selector: "${companyElement.textContent.trim()}"`);
+                return companyElement.textContent.trim();
             }
 
-            this.log('⚠️ [COMPANY] Could not find a valid company name with the primary selector. Trying fallback methods...');
+            // Fallback to the old selector
+            const fallbackSelector = 'div.font-bold.font-size-base a[data-link] span[data-expression]';
+            companyElement = container.querySelector(fallbackSelector);
+
+            if (companyElement && this.isValidCompanyName(companyElement.textContent.trim(), currentTitle)) {
+                this.log(`✅ [COMPANY] Found company with fallback selector: "${companyElement.textContent.trim()}"`);
+                return companyElement.textContent.trim();
+            }
+
+            this.log('⚠️ [COMPANY] Could not find a valid company name with selectors. Trying text-based search...');
 
             const allSpans = container.querySelectorAll('span[data-expression]');
             for (const span of allSpans) {
                 const text = span.textContent.trim();
                 if (this.isValidCompanyName(text, currentTitle)) {
-                    this.log(`✅ [COMPANY] Found company with fallback: "${text}"`);
+                    this.log(`✅ [COMPANY] Found company with text-based search: "${text}"`);
                     return text;
                 }
             }
@@ -613,61 +620,49 @@ class JadaratAutoStable {
     findJobCardContainerImproved(link) {
         try {
             const strategies = [
+                // Strategy 1: Find the closest container with a job title and company name
                 () => {
                     let container = link.closest('[data-container]');
-                    let attempts = 0;
-
-                    while (container && attempts < 10) {
-                        const hasCompany = container.querySelector('a[data-link][href="#"]');
-                        const hasLocation = container.textContent.includes('المدينة') || container.textContent.includes('الرياض');
-                        const hasDate = container.textContent.includes('تاريخ النشر');
-
-                        if (hasCompany && (hasLocation || hasDate)) {
+                    while (container) {
+                        const hasTitle = container.querySelector('span.heading4.OSFillParent');
+                        const hasCompany = container.querySelector('div.font-bold.font-size-base a[data-link] span[data-expression]');
+                        if (hasTitle && hasCompany) {
                             return container;
                         }
-
-                        container = container.parentElement?.closest('[data-container]');
-                        attempts++;
+                        container = container.parentElement.closest('[data-container]');
                     }
                     return null;
                 },
-
-                () => {
-                    return link.closest('.OSBlockWidget');
-                },
-
+                // Strategy 2: Find the closest OSBlockWidget
+                () => link.closest('.OSBlockWidget'),
+                // Strategy 3: Find the closest container with a matching score
                 () => {
                     let container = link.closest('[data-container]');
-                    let attempts = 0;
-
-                    while (container && attempts < 8) {
+                    while (container) {
                         if (container.querySelector('span.matching_score')) {
                             return container;
                         }
-                        container = container.parentElement?.closest('[data-container]');
-                        attempts++;
+                        container = container.parentElement.closest('[data-container]');
                     }
                     return null;
                 },
-
-                () => {
-                    return link.closest('[data-container]');
-                }
+                // Strategy 4: The direct parent container
+                () => link.closest('[data-container]')
             ];
 
             for (let i = 0; i < strategies.length; i++) {
                 const container = strategies[i]();
                 if (container) {
-                    this.log(`✅ [CONTAINER] نجحت الاستراتيجية ${i + 1}`);
+                    this.log(`✅ [CONTAINER] Strategy ${i + 1} succeeded.`);
                     return container;
                 }
             }
 
-            this.log('❌ [CONTAINER] فشلت جميع الاستراتيجيات');
+            this.log('❌ [CONTAINER] All strategies failed.');
             return null;
 
         } catch (error) {
-            this.log('❌ [CONTAINER] خطأ في العثور على حاوي البطاقة:', error);
+            this.log('❌ [CONTAINER] Error finding job card container:', error);
             return link.closest('[data-container]');
         }
     }
