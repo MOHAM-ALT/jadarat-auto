@@ -871,56 +871,52 @@ detectPageTypeAndLog() {
     }
 
 async runMainLoop() {
-    this.log('🔄 [MAIN] بدء الحلقة الرئيسية المُحسنة...');
+    this.log('🔄 [MAIN] Starting main loop...');
 
     while (!this.shouldStop && this.isRunning) {
         const pageType = this.detectPageTypeAndLog();
 
         switch (pageType) {
             case 'jobList':
-                this.log('📋 [MAIN] معالجة صفحة قائمة الوظائف...');
-                const hasMoreJobs = await this.processJobListPage();
+                this.log('📋 [MAIN] Processing job list page...');
+                await this.processJobListPage();
 
-                if (!hasMoreJobs && !this.shouldStop) {
-                    this.log('📄 [MAIN] محاولة الانتقال للصفحة التالية...');
+                if (!this.shouldStop) {
+                    this.log('📄 [MAIN] Attempting to move to the next page...');
                     const movedToNext = await this.moveToNextPage();
                     if (!movedToNext) {
-                        this.log('✅ [MAIN] تم الانتهاء من جميع الصفحات');
-                        break; // ✅ اخرج من الحلقة
+                        this.log('✅ [MAIN] All pages finished.');
+                        this.shouldStop = true;
                     }
                 }
                 break;
 
             case 'jobDetails':
-                this.log('🔙 [MAIN] في صفحة تفاصيل، العودة للقائمة...');
+                this.log('🔙 [MAIN] On details page, returning to list...');
                 await this.goBackToJobList();
-                // ✅ لا نحتاج انتظار إضافي لأن goBackToJobList تتعامل مع هذا
                 break;
 
             case 'home':
-                this.log('🏠 [MAIN] في الصفحة الرئيسية، التنقل للوظائف...');
+                this.log('🏠 [MAIN] On home page, navigating to jobs...');
                 await this.navigateToJobList();
                 await this.wait(3000);
                 break;
 
             default:
-                this.log('❓ [MAIN] صفحة غير معروفة، التنقل للقائمة...');
+                this.log('❓ [MAIN] Unknown page, navigating to list...');
                 await this.navigateToJobList();
                 await this.wait(3000);
                 break;
         }
 
-        // ✅ انتظار قصير لمنع الحمل الزائد
-// ✅ انتظار قصير لمنع الحمل الزائد
-await this.wait(500);
+        await this.wait(500);
 
-// 🆕 فحص دوري لحالة النظام
-if (this.stats.total % 10 === 0 && this.stats.total > 0) {
-    this.checkSystemHealth();
-}
+        if (this.stats.total % 10 === 0 && this.stats.total > 0) {
+            this.checkSystemHealth();
+        }
     }
 
-    this.log('🏁 [MAIN] انتهت الحلقة الرئيسية');
+    this.log('🏁 [MAIN] Main loop finished.');
     await this.displayFinalResults();
 }
 
@@ -959,8 +955,10 @@ if (jobCards.length === 0) {
 
         for (let i = 0; i < jobCards.length && !this.shouldStop; i++) {
             this.currentJobIndex = i + 1;
+            const progress = ((this.currentJobIndex) / jobCards.length) * 100;
+            chrome.runtime.sendMessage({ action: 'UPDATE_PROGRESS', progress: progress, text: `Processing job ${this.currentJobIndex} of ${jobCards.length}` });
 
-            this.log(`\n🎯 [JOB ${this.currentJobIndex}/${jobCards.length}] بدء المعالجة المُحسنة...`);
+            this.log(`\n🎯 [JOB ${this.currentJobIndex}/${jobCards.length}] Starting improved processing...`);
 
             try {
                 const result = await this.processIndividualJob(jobCards[i]);
@@ -989,55 +987,53 @@ if (jobCards.length === 0) {
     }
 
     async processIndividualJob(jobCard) {
-        this.log(`🔍 [PROCESS] استخراج بيانات الوظيفة المُحسن...`);
-
+        this.log(`🔍 [PROCESS] Extracting job data...`);
         const jobData = this.extractJobDataFromHTML(jobCard);
 
-        this.log(`📝 [PROCESS] الوظيفة: "${jobData.title}"`);
-        this.log(`🏢 [PROCESS] الشركة: "${jobData.company}"`);
-        this.log(`📍 [PROCESS] الموقع: "${jobData.location}"`);
-        this.log(`📊 [PROCESS] التوافق: "${jobData.matchingScore || 'غير محدد'}"`);
-        this.log(`📅 [PROCESS] التاريخ: "${jobData.publishDate || 'غير محدد'}"`);
-        this.log(`⭐ [PROCESS] جودة البيانات: ${jobData.dataQuality.level} (${(jobData.dataQuality.score * 100).toFixed(1)}%)`);
+        chrome.runtime.sendMessage({ action: 'UPDATE_CURRENT_JOB', jobTitle: jobData.title, status: 'processing' });
+
+        this.log(`📝 [PROCESS] Job: "${jobData.title}"`);
+        this.log(`🏢 [PROCESS] Company: "${jobData.company}"`);
 
         if (jobData.alreadyApplied) {
-            this.log('✅ [PROCESS] تم التقدم مسبقاً (من القائمة)');
+            this.log('✅ [PROCESS] Already applied (from list)');
             this.stats.alreadyApplied++;
             this.appliedJobs.add(jobData.id);
+            chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
             return { result: 'already_applied_list', quality: jobData.dataQuality };
         }
 
         if (this.visitedJobs.has(jobData.id)) {
-            this.log('🔄 [PROCESS] تم زيارة هذه الوظيفة من الذاكرة');
+            this.log('🔄 [PROCESS] Visited from memory');
             this.stats.fromMemory++;
             this.stats.skipped++;
+            chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
             return { result: 'visited_from_memory', quality: jobData.dataQuality };
         }
 
         if (this.rejectedJobs.has(jobData.id)) {
-            this.log('❌ [PROCESS] مرفوضة من الذاكرة');
+            this.log('❌ [PROCESS] Rejected from memory');
             this.stats.fromMemory++;
             this.stats.rejected++;
+            chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
             return { result: 'rejected_from_memory', quality: jobData.dataQuality };
         }
 
         if (this.appliedJobs.has(jobData.id)) {
-            this.log('✅ [PROCESS] مُقدم عليها من الذاكرة');
+            this.log('✅ [PROCESS] Applied from memory');
             this.stats.fromMemory++;
             this.stats.alreadyApplied++;
+            chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
             return { result: 'applied_from_memory', quality: jobData.dataQuality };
         }
 
-        this.log('🆕 [PROCESS] وظيفة جديدة، بدء المعالجة الكاملة...');
-
-        if (this.stepByStepMode) {
-            await this.waitForUserInput('اضغط Enter للمتابعة للوظيفة التالية...');
-        }
+        this.log('🆕 [PROCESS] New job, starting full processing...');
 
         const result = await this.processNewJob(jobData);
 
         this.visitedJobs.add(jobData.id);
         this.stats.total++;
+        chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
 
         return { result, quality: jobData.dataQuality };
     }
