@@ -818,7 +818,7 @@ async detectPageTypeAndLog() {
     if (pageType === 'unknown') {
         if (document.querySelector('a[href*="/Jadarat/JobDetails"]')) {
             pageType = 'jobList';
-        } else if (document.querySelector('.job-details-container') || document.querySelector('button[data-button]:contains("تقديم")')) {
+        } else if (document.querySelector('.job-details-container') || Array.from(document.querySelectorAll('button[data-button]')).find(button => button.textContent.trim() === 'تقديم')) {
             pageType = 'jobDetails';
         }
     }
@@ -998,10 +998,8 @@ if (jobCards.length === 0) {
             const progress = ((this.currentJobIndex) / jobCards.length) * 100;
             chrome.runtime.sendMessage({ action: 'UPDATE_PROGRESS', progress: progress, text: `Processing job ${this.currentJobIndex} of ${jobCards.length}` });
 
-            this.log(`\n🎯 [JOB ${this.currentJobIndex}/${jobCards.length}] Starting improved processing...`);
-
             try {
-                const result = await this.processIndividualJob(jobCards[i]);
+                const result = await this.processIndividualJob(jobCards[i], this.currentJobIndex, jobCards.length);
 
                 if (result && result.quality) {
                     qualityStats[result.quality.level] = (qualityStats[result.quality.level] || 0) + 1;
@@ -1085,6 +1083,31 @@ if (jobCards.length === 0) {
 
         // Store error for later analysis
         this.storeError(errorReport);
+    }
+
+    detectPageType() {
+        const url = window.location.href;
+        let pageType = 'unknown';
+
+        // 1. Check URL first
+        if (url.includes('/Jadarat/JobDetails')) {
+            pageType = 'jobDetails';
+        } else if (url.includes('/Jadarat/ExploreJobs') || url.includes('JobTab=1')) {
+            pageType = 'jobList';
+        } else if (url.includes('/Jadarat/Home')) {
+            pageType = 'home';
+        }
+
+        // 2. Check page elements as a fallback
+        if (pageType === 'unknown') {
+            if (document.querySelector('a[href*="/Jadarat/JobDetails"]')) {
+                pageType = 'jobList';
+            } else if (document.querySelector('.job-details-container') || Array.from(document.querySelectorAll('button[data-button]')).find(button => button.textContent.trim() === 'تقديم')) {
+                pageType = 'jobDetails';
+            }
+        }
+
+        return pageType;
     }
 
     async storeError(errorReport) {
@@ -1219,7 +1242,7 @@ return applicationResult.success ? 'applied_success' : 'applied_rejected';
     }
 
     async checkIfAlreadyAppliedInDetails() {
-        this.log('🔍 [DETAILS_CHECK] فحص التقديم المسبق في التفاصيل...');
+        this.log('🔍 [DETAILS_CHECK] Checking for previous application in details...');
 
         try {
             const buttons = document.querySelectorAll('button[data-button]');
@@ -1228,7 +1251,7 @@ return applicationResult.success ? 'applied_success' : 'applied_rejected';
                 if (buttonText.includes('استعراض طلب التقديم') ||
                     buttonText.includes('تم التقديم') ||
                     buttonText.includes('عرض الطلب')) {
-                    this.log('✅ [DETAILS_CHECK] وجد مؤشر التقديم المسبق');
+                    this.log('✅ [DETAILS_CHECK] Found previous application indicator');
                     return true;
                 }
             }
@@ -1298,56 +1321,50 @@ return applicationResult.success ? 'applied_success' : 'applied_rejected';
                 if (btn.textContent.trim() === 'تقديم' &&
                     !btn.disabled &&
                     btn.offsetWidth > 0) {
-                    this.log('✅ [SUBMIT_BTN] تم العثور على زر التقديم');
+                    this.log('✅ [SUBMIT_BTN] Found submit button');
                     return btn;
                 }
             }
 
-            this.log('❌ [SUBMIT_BTN] لم يتم العثور على زر التقديم');
+            this.log('❌ [SUBMIT_BTN] Submit button not found');
             return null;
 
         } catch (error) {
-            this.log('❌ [SUBMIT_BTN] خطأ في البحث عن زر التقديم:', error);
+            this.log('❌ [SUBMIT_BTN] Error finding submit button:', error);
             return null;
         }
     }
 
     async handleConfirmationDialog() {
-        this.log('⏳ [CONFIRM] انتظار نافذة التأكيد...');
+        this.log('⏳ [CONFIRM] Waiting for confirmation dialog...');
 
         const maxAttempts = 10;
         let attempts = 0;
 
         while (attempts < maxAttempts) {
-            const confirmDialog = document.querySelector('div[data-popup][role="dialog"]');
+            const confirmDialog = Array.from(document.querySelectorAll('div[data-popup][role="dialog"]')).find(d => d.style.display !== 'none' && (d.textContent.includes('هل أنت متأكد') || d.textContent.includes('التقديم على وظيفة')));
 
-            if (confirmDialog && confirmDialog.style.display !== 'none') {
-                const dialogText = confirmDialog.textContent;
+            if (confirmDialog) {
+                this.log('✅ [CONFIRM] Found confirmation dialog');
 
-                if (dialogText.includes('هل أنت متأكد') || dialogText.includes('التقديم على وظيفة')) {
-                    this.log('✅ [CONFIRM] تم العثور على نافذة التأكيد');
-
-                    const confirmButtons = confirmDialog.querySelectorAll('button[data-button]');
-                    for (const btn of confirmButtons) {
-                        if (btn.textContent.trim() === 'تقديم') {
-                            this.log('🖱️ [CONFIRM] النقر على زر التأكيد...');
-                            await this.clickElementSafely(btn);
-                            await this.wait(3000);
-                            return { success: true };
-                        }
-                    }
-
-                    this.log('❌ [CONFIRM] لم يتم العثور على زر التأكيد');
-                    return { success: false, reason: 'زر التأكيد غير موجود' };
+                const confirmButton = Array.from(confirmDialog.querySelectorAll('button[data-button]')).find(btn => btn.textContent.trim() === 'تقديم');
+                if (confirmButton) {
+                    this.log('🖱️ [CONFIRM] Clicking confirmation button...');
+                    await this.clickElementSafely(confirmButton);
+                    await this.wait(3000);
+                    return { success: true };
                 }
+
+                this.log('❌ [CONFIRM] Confirmation button not found');
+                return { success: false, reason: 'Confirmation button not found' };
             }
 
             attempts++;
             await this.wait(1000);
         }
 
-        this.log('⚠️ [CONFIRM] انتهت مهلة انتظار نافذة التأكيد');
-        return { success: false, reason: 'نافذة التأكيد لم تظهر' };
+        this.log('⚠️ [CONFIRM] Timed out waiting for confirmation dialog');
+        return { success: false, reason: 'Confirmation dialog did not appear' };
     }
 
     detectSuccessDialog() {
