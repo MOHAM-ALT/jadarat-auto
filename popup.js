@@ -698,9 +698,27 @@ constructor() {
                 case 'SAVE_REJECTION_DATA':
                     this.loadSettings();
                     break;
+
+                case 'PAGE_TYPE_UPDATE':
+                    this.updatePageTypeDisplay(message.pageType);
+                    console.log(`📄 [POPUP] Received page type: ${message.pageType}`);
+                    break;
             }
         } catch (error) {
             console.error('خطأ في معالجة الرسالة:', error);
+        }
+    }
+
+    updatePageTypeDisplay(pageType) {
+        const displayNames = {
+            'jobList': 'قائمة الوظائف',
+            'jobDetails': 'صفحة تفاصيل',
+            'home': 'الصفحة الرئيسية',
+            'unknown': 'غير محدد'
+        };
+
+        if (this.debugPageType) {
+            this.debugPageType.textContent = displayNames[pageType] || 'غير محدد';
         }
     }
 

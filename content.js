@@ -799,7 +799,7 @@ class JadaratAutoStable {
         this.log('📨 [MESSAGE] تم تهيئة مستمع الرسائل');
     }
 
-detectPageTypeAndLog() {
+async detectPageTypeAndLog() {
     const url = window.location.href;
     let pageType = 'unknown';
 
@@ -816,9 +816,22 @@ detectPageTypeAndLog() {
     if (pageType === 'unknown') {
         if (document.querySelector('a[href*="JobDetails"]')) {
             pageType = 'jobList';
-        } else if (document.querySelector('.job-details-container')) {
+        } else if (document.querySelector('.job-details-container') || document.querySelector('button[data-button]:contains("تقديم")')) {
             pageType = 'jobDetails';
         }
+    }
+
+    // CRITICAL: Send page type to popup
+    try {
+        await chrome.runtime.sendMessage({
+            type: 'PAGE_TYPE_UPDATE',
+            pageType: pageType,
+            url: url,
+            timestamp: new Date().toISOString()
+        });
+        console.log(`📄 [PAGE_TYPE] Sent to popup: ${pageType}`);
+    } catch (error) {
+        console.log(`❌ [PAGE_TYPE] Failed to send to popup: ${error.message}`);
     }
 
     if (this.lastPageType !== pageType) {
@@ -986,56 +999,78 @@ if (jobCards.length === 0) {
         return false;
     }
 
-    async processIndividualJob(jobCard) {
-        this.log(`🔍 [PROCESS] Extracting job data...`);
-        const jobData = this.extractJobDataFromHTML(jobCard);
+    async processIndividualJob(jobCard, index, total) {
+        console.log(`\n🎯 [JOB_START] ===== Processing Job ${index}/${total} =====`);
+        console.log(`⏰ [JOB_TIME] Started at: ${new Date().toLocaleTimeString()}`);
 
-        chrome.runtime.sendMessage({ action: 'UPDATE_CURRENT_JOB', jobTitle: jobData.title, status: 'processing' });
-
-        this.log(`📝 [PROCESS] Job: "${jobData.title}"`);
-        this.log(`🏢 [PROCESS] Company: "${jobData.company}"`);
-
-        if (jobData.alreadyApplied) {
-            this.log('✅ [PROCESS] Already applied (from list)');
-            this.stats.alreadyApplied++;
-            this.appliedJobs.add(jobData.id);
-            chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
-            return { result: 'already_applied_list', quality: jobData.dataQuality };
+        try {
+            const result = await this.processJobLogic(jobCard);
+            console.log(`✅ [JOB_SUCCESS] Job ${index}/${total} completed: ${result}`);
+            return result;
+        } catch (error) {
+            this.logError('PROCESS_INDIVIDUAL_JOB', error, { jobCard, index, total });
+            throw error;
+        } finally {
+            console.log(`⏰ [JOB_END] Job ${index}/${total} ended at: ${new Date().toLocaleTimeString()}`);
+            console.log(`🎯 [JOB_END] ===== End Job ${index}/${total} =====\n`);
         }
+    }
 
-        if (this.visitedJobs.has(jobData.id)) {
-            this.log('🔄 [PROCESS] Visited from memory');
-            this.stats.fromMemory++;
-            this.stats.skipped++;
-            chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
-            return { result: 'visited_from_memory', quality: jobData.dataQuality };
+    detectDialogs() {
+        console.log(`🔍 [DIALOG_SCAN] Scanning for dialogs...`);
+
+        const allDialogs = document.querySelectorAll('[role="dialog"], .popup-dialog, [data-popup]');
+        console.log(`📊 [DIALOG_COUNT] Found ${allDialogs.length} potential dialogs`);
+
+        allDialogs.forEach((dialog, index) => {
+            const isVisible = dialog.style.display !== 'none' && dialog.offsetWidth > 0;
+            const hasText = dialog.textContent.trim();
+            const hasButtons = dialog.querySelectorAll('button').length;
+
+            console.log(`📋 [DIALOG_${index}] Visible: ${isVisible}, Text: "${hasText.substring(0, 50)}...", Buttons: ${hasButtons}`);
+        });
+
+        return allDialogs;
+    }
+
+    logError(context, error, additionalData = {}) {
+        const errorReport = {
+            timestamp: new Date().toISOString(),
+            context: context,
+            error: {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            },
+            page: {
+                url: window.location.href,
+                title: document.title,
+                type: this.detectPageType()
+            },
+            system: {
+                userAgent: navigator.userAgent,
+                viewport: `${window.innerWidth}x${window.innerHeight}`
+            },
+            additional: additionalData
+        };
+
+        console.error(`💥 [ERROR_REPORT] ${context}:`, errorReport);
+
+        // Store error for later analysis
+        this.storeError(errorReport);
+    }
+
+    async storeError(errorReport) {
+        try {
+            const { errors = [] } = await chrome.storage.local.get('errors');
+            errors.push(errorReport);
+            if (errors.length > 100) {
+                errors.shift(); // Keep only the last 100 errors
+            }
+            await chrome.storage.local.set({ errors });
+        } catch (e) {
+            console.error('Failed to store error report:', e);
         }
-
-        if (this.rejectedJobs.has(jobData.id)) {
-            this.log('❌ [PROCESS] Rejected from memory');
-            this.stats.fromMemory++;
-            this.stats.rejected++;
-            chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
-            return { result: 'rejected_from_memory', quality: jobData.dataQuality };
-        }
-
-        if (this.appliedJobs.has(jobData.id)) {
-            this.log('✅ [PROCESS] Applied from memory');
-            this.stats.fromMemory++;
-            this.stats.alreadyApplied++;
-            chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
-            return { result: 'applied_from_memory', quality: jobData.dataQuality };
-        }
-
-        this.log('🆕 [PROCESS] New job, starting full processing...');
-
-        const result = await this.processNewJob(jobData);
-
-        this.visitedJobs.add(jobData.id);
-        this.stats.total++;
-        chrome.runtime.sendMessage({ action: 'UPDATE_STATS', stats: this.stats });
-
-        return { result, quality: jobData.dataQuality };
     }
 
     async processNewJob(jobData) {
@@ -1088,18 +1123,34 @@ await this.goBackToJobList();
 return applicationResult.success ? 'applied_success' : 'applied_rejected';
 
         } catch (error) {
-            this.log('❌ [NEW_JOB] خطأ في معالجة الوظيفة الجديدة:', error);
-            this.stats.errors++;
-
-           // ✅ في حالة الخطأ، تأكد من العودة
-try {
-    await this.goBackToJobList();
-} catch (backError) {
-    this.log('❌ [NEW_JOB] خطأ في العودة للقائمة:', backError);
-}
-
+            this.logError('PROCESS_NEW_JOB', error, { jobData });
+            await this.recoverFromDialogFailure();
             return 'error';
         }
+    }
+
+    async recoverFromDialogFailure() {
+        console.log(`🔄 [RECOVERY] Starting process recovery...`);
+
+        // Check if we're stuck on a dialog
+        const openDialogs = this.detectDialogs().filter(d => d.style.display !== 'none');
+        if (openDialogs.length > 0) {
+            console.log(`🔄 [RECOVERY] Found ${openDialogs.length} open dialogs, forcing close`);
+
+            // Force close all dialogs
+            openDialogs.forEach(dialog => {
+                dialog.style.display = 'none';
+                dialog.remove();
+            });
+        }
+
+        // Force navigation back to job list
+        console.log(`🔄 [RECOVERY] Forcing navigation back to job list`);
+        await this.goBackToJobList();
+
+        // Continue with next job
+        console.log(`🔄 [RECOVERY] Recovery complete, continuing process`);
+        return true;
     }
     // ========================
     // 🎯 عمليات التفاصيل والتقديم المُحسنة
@@ -1272,13 +1323,156 @@ try {
         return { success: false, reason: 'نافذة التأكيد لم تظهر' };
     }
 
+    detectSuccessDialog() {
+        const successSelectors = [
+            'div[data-popup][role="dialog"]:has(span:contains("تم التقديم"))',
+            'div[role="dialog"]:has(.icon-hrdf-circle-tick)',
+            'div.popup-dialog:has(span:contains("تم تقديم طلبكم"))',
+            'div[data-popup]:has(i.fa-check)',
+            'div[role="dialog"]:has(span:contains("بنجاح"))'
+        ];
+
+        for (const selector of successSelectors) {
+            const dialog = document.querySelector(selector);
+            if (dialog && dialog.style.display !== 'none') {
+                return dialog;
+            }
+        }
+        return null;
+    }
+
+    findCloseButtonInSuccessDialog(dialog) {
+        const closeButtonSelectors = [
+            'button[data-button]:contains("اغلاق")',
+            'button[data-button]:contains("إغلاق")',
+            'button.btn-primary:contains("اغلاق")',
+            'button.btn:contains("اغلاق")',
+            'button[data-button].btn-primary',
+            'button[data-button]:last-child',
+            '.close-button',
+            'button:contains("×")',
+            'button:contains("✕")'
+        ];
+
+        for (const selector of closeButtonSelectors) {
+            const button = dialog.querySelector(selector);
+            if (button && button.offsetWidth > 0) {
+                return button;
+            }
+        }
+        return null;
+    }
+
+    async clickSuccessDialogClose(button) {
+        const strategies = [
+            // Strategy 1: Direct click with focus
+            () => {
+                button.focus();
+                button.click();
+                return true;
+            },
+
+            // Strategy 2: Mouse events sequence
+            () => {
+                const rect = button.getBoundingClientRect();
+                const events = ['mousedown', 'mouseup', 'click'];
+                events.forEach(eventType => {
+                    button.dispatchEvent(new MouseEvent(eventType, {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: rect.left + rect.width / 2,
+                        clientY: rect.top + rect.height / 2
+                    }));
+                });
+                return true;
+            },
+
+            // Strategy 3: Keyboard simulation
+            () => {
+                button.focus();
+                button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+                button.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter' }));
+                return true;
+            },
+
+            // Strategy 4: Force click with JavaScript
+            () => {
+                if (button.onclick) {
+                    button.onclick();
+                } else {
+                    button.click();
+                }
+                return true;
+            },
+
+            // Strategy 5: DOM manipulation (last resort)
+            () => {
+                const dialog = button.closest('[role="dialog"]') || button.closest('.popup-dialog');
+                if (dialog) {
+                    dialog.style.display = 'none';
+                    dialog.remove();
+                }
+                return true;
+            }
+        ];
+
+        for (let i = 0; i < strategies.length; i++) {
+            try {
+                console.log(`🖱️ [SUCCESS_CLOSE] Trying strategy ${i + 1}/${strategies.length}`);
+                await strategies[i]();
+                await this.wait(1000);
+
+                // Check if dialog is closed
+                if (!this.detectSuccessDialog()) {
+                    console.log(`✅ [SUCCESS_CLOSE] Strategy ${i + 1} succeeded`);
+                    return true;
+                }
+            } catch (error) {
+                console.log(`❌ [SUCCESS_CLOSE] Strategy ${i + 1} failed: ${error.message}`);
+            }
+        }
+
+        if (this.detectSuccessDialog()) {
+            await this.handleSandboxError();
+            return true;
+        }
+
+        return false;
+    }
+
+    async handleSandboxError() {
+        console.log('🔄 [SANDBOX] Detected sandbox restriction, using alternative navigation');
+
+        // Force navigation back to job list
+        try {
+            window.location.href = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
+            await this.wait(5000);
+            return true;
+        } catch (error) {
+            console.log('❌ [SANDBOX] Alternative navigation failed');
+            return false;
+        }
+    }
+
     async handleResultDialog() {
-        this.log('⏳ [RESULT] انتظار نافذة النتيجة...');
+        this.log('⏳ [RESULT] Waiting for result dialog...');
 
         const maxAttempts = 20;
         let attempts = 0;
 
         while (attempts < maxAttempts) {
+            this.detectDialogs();
+            const successDialog = this.detectSuccessDialog();
+            if (successDialog) {
+                this.log('✅ [RESULT] Application successful!');
+                const closeButton = this.findCloseButtonInSuccessDialog(successDialog);
+                if (closeButton) {
+                    await this.clickSuccessDialogClose(closeButton);
+                }
+                return { success: true, type: 'success' };
+            }
+
             const resultDialogs = document.querySelectorAll('div[data-popup][role="dialog"]');
 
             for (const dialog of resultDialogs) {
@@ -1286,14 +1480,8 @@ try {
 
                 const dialogText = dialog.textContent;
 
-                if (dialogText.includes('تم تقديم طلبك')) {
-                    this.log('✅ [RESULT] نجح التقديم!');
-                    await this.closeDialog(dialog);
-                    return { success: true, type: 'success' };
-                }
-
                 if (dialogText.includes('عذراً ، لا يمكنك التقديم') || dialogText.includes('غير مؤهل')) {
-                    this.log('❌ [RESULT] تم رفض التقديم');
+                    this.log('❌ [RESULT] Application rejected');
                     const reason = this.extractRejectionReason(dialogText);
                     await this.closeDialog(dialog);
                     return { success: false, type: 'rejection', reason: reason };
@@ -1304,8 +1492,8 @@ try {
             await this.wait(1000);
         }
 
-        this.log('⚠️ [RESULT] انتهت مهلة انتظار نافذة النتيجة');
-        return { success: false, type: 'timeout', reason: 'انتهت المهلة' };
+        this.log('⚠️ [RESULT] Timed out waiting for result dialog');
+        return { success: false, type: 'timeout', reason: 'Timeout' };
     }
 
     extractRejectionReason(dialogText) {
@@ -1513,140 +1701,40 @@ async waitForPageLoad() {
         }
     }
 
-    async clickElementSafely(element) {
-        try {
-            if (!element) {
-                throw new Error('العنصر غير موجود');
+    async clickElementSafely(element, elementName = 'element') {
+        console.log(`🎯 [CLICK_START] Starting click on ${elementName}`);
+        console.log(`🔍 [CLICK_ELEMENT] Tag: ${element.tagName}, Class: ${element.className}`);
+        console.log(`📏 [CLICK_SIZE] Width: ${element.offsetWidth}, Height: ${element.offsetHeight}`);
+        console.log(`👁️ [CLICK_VISIBLE] Visible: ${element.offsetWidth > 0 && element.offsetHeight > 0}`);
+        console.log(`🎯 [CLICK_POSITION] Top: ${element.offsetTop}, Left: ${element.offsetLeft}`);
+        console.log(`📝 [CLICK_TEXT] Text: "${element.textContent.trim()}"`);
+
+        const strategies = [
+            { name: 'Direct Click', method: () => element.click() },
+            { name: 'Mouse Event', method: () => this.dispatchMouseEvent(element) },
+            { name: 'Focus + Enter', method: () => this.focusAndEnter(element) },
+            { name: 'Force Click', method: () => this.forceClick(element) }
+        ];
+
+        for (let i = 0; i < strategies.length; i++) {
+            const strategy = strategies[i];
+            console.log(`🖱️ [CLICK_TRY] Method ${i + 1}: ${strategy.name}`);
+
+            try {
+                await strategy.method();
+                await this.wait(2000);
+
+                console.log(`✅ [CLICK_SUCCESS] ${strategy.name} succeeded on ${elementName}`);
+                return true;
+
+            } catch (error) {
+                console.log(`❌ [CLICK_FAIL] ${strategy.name} failed: ${error.message}`);
+                console.log(`🔍 [CLICK_ERROR] Stack: ${error.stack}`);
             }
-
-            this.log('🔍 [CLICK] فحص العنصر قبل النقر...');
-
-            if (!document.contains(element)) {
-                throw new Error('العنصر غير موجود في الصفحة');
-            }
-
-            const rect = element.getBoundingClientRect();
-            this.log(`📏 [CLICK] مقاسات العنصر: ${rect.width}x${rect.height}`);
-
-            if (rect.width === 0 || rect.height === 0) {
-                this.log('🔍 [CLICK] العنصر غير مرئي، البحث عن بديل...');
-
-                const clickableParent = element.closest('a, button, [data-link]');
-                if (clickableParent && clickableParent.getBoundingClientRect().width > 0) {
-                    this.log('✅ [CLICK] تم العثور على عنصر بديل قابل للنقر');
-                    element = clickableParent;
-                } else {
-                    throw new Error('العنصر وجميع العناصر الأبوية غير مرئية');
-                }
-            }
-
-            this.log('📜 [CLICK] التمرير للعنصر...');
-            element.scrollIntoView({
-                behavior: 'smooth',
-                block: 'center',
-                inline: 'center'
-            });
-            await this.wait(1200);
-
-            const overlays = document.querySelectorAll('.overlay, .modal-backdrop, [style*="position: fixed"]');
-            for (const overlay of overlays) {
-                if (overlay.style.display !== 'none') {
-                    this.log('🗑️ [CLICK] إخفاء عائق محتمل...');
-                    overlay.style.display = 'none';
-                }
-            }
-
-            await this.wait(500);
-
-            this.log('🖱️ [CLICK] محاولة النقر...');
-
-            const clickStrategies = [
-                () => {
-                    this.log('🖱️ [CLICK] الطريقة 1: النقر المباشر');
-                    element.click();
-                },
-
-                () => {
-                    this.log('🖱️ [CLICK] الطريقة 2: MouseEvent مُحسن');
-                    const rect = element.getBoundingClientRect();
-                    const x = rect.left + rect.width / 2;
-                    const y = rect.top + rect.height / 2;
-
-                    ['mousedown', 'mouseup', 'click'].forEach(eventType => {
-                        const event = new MouseEvent(eventType, {
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: x,
-                            clientY: y,
-                            buttons: 1
-                        });
-                        element.dispatchEvent(event);
-                    });
-                },
-
-                () => {
-                    this.log('🖱️ [CLICK] الطريقة 3: Focus + Enter');
-                    if (element.focus) element.focus();
-
-                    const enterEvent = new KeyboardEvent('keydown', {
-                        key: 'Enter',
-                        code: 'Enter',
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    element.dispatchEvent(enterEvent);
-                },
-
-                () => {
-                    this.log('🖱️ [CLICK] الطريقة 4: التنقل المباشر');
-                    if (element.tagName.toLowerCase() === 'button') {
-                        throw new Error('Buttons do not support direct navigation');
-                    }
-                    if (element.href) {
-                        window.location.href = element.href;
-                    } else {
-                        const link = element.querySelector('a[href]') || element.closest('a[href]');
-                        if (link && link.href) {
-                            window.location.href = link.href;
-                        } else {
-                            throw new Error('لا يوجد رابط للانتقال إليه');
-                        }
-                    }
-                }
-            ];
-
-            const originalUrl = window.location.href;
-
-            for (let i = 0; i < clickStrategies.length; i++) {
-                try {
-                    clickStrategies[i]();
-                    await this.wait(800);
-
-                    await this.wait(1200);
-                    const newUrl = window.location.href;
-
-                    if (newUrl !== originalUrl ||
-                        document.querySelector('div[data-popup][role="dialog"]')) {
-                        this.log(`✅ [CLICK] نجح النقر بالطريقة ${i + 1}`);
-                        return true;
-                    }
-
-                } catch (clickError) {
-                    this.log(`⚠️ [CLICK] فشلت الطريقة ${i + 1}: ${clickError.message}`);
-                    if (i === clickStrategies.length - 1) {
-                        throw clickError;
-                    }
-                }
-            }
-
-            this.log('✅ [CLICK] تم النقر بنجاح');
-            return true;
-
-        } catch (error) {
-            this.log('❌ [CLICK] خطأ في النقر:', error);
-            return false;
         }
+
+        console.log(`💥 [CLICK_FATAL] All click methods failed for ${elementName}`);
+        return false;
     }
 
     async smartDelay() {
