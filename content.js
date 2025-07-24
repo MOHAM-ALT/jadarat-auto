@@ -100,7 +100,9 @@ class JadaratAutoStable {
         this.currentJobIndex = 0;
         this.totalJobsOnPage = 0;
         this.currentPage = 1;
-        this.lastPageType = null; // 🆕 لتجنب spam في console
+        this.lastPageType = null;
+        this.unknownPageCount = 0;
+        this.navigationAttempts = 0;
 
         this.visitedJobs = new Set();
         this.rejectedJobs = new Set();
@@ -804,17 +806,17 @@ async detectPageTypeAndLog() {
     let pageType = 'unknown';
 
     // 1. Check URL first
-    if (url.includes('/JobDetails')) {
+    if (url.includes('/Jadarat/JobDetails')) {
         pageType = 'jobDetails';
-    } else if (url.includes('/ExploreJobs') || url.includes('JobTab=1')) {
+    } else if (url.includes('/Jadarat/ExploreJobs') || url.includes('JobTab=1')) {
         pageType = 'jobList';
-    } else if (url.includes('/Home')) {
+    } else if (url.includes('/Jadarat/Home')) {
         pageType = 'home';
     }
 
     // 2. Check page elements as a fallback
     if (pageType === 'unknown') {
-        if (document.querySelector('a[href*="JobDetails"]')) {
+        if (document.querySelector('a[href*="/Jadarat/JobDetails"]')) {
             pageType = 'jobList';
         } else if (document.querySelector('.job-details-container') || document.querySelector('button[data-button]:contains("تقديم")')) {
             pageType = 'jobDetails';
@@ -823,10 +825,16 @@ async detectPageTypeAndLog() {
 
     // CRITICAL: Send page type to popup
     try {
+        const jobLinks = document.querySelectorAll('a[href*="/Jadarat/JobDetails"]');
+        const applyButtons = document.querySelectorAll('button[data-button]:contains("تقديم")');
+
         await chrome.runtime.sendMessage({
             type: 'PAGE_TYPE_UPDATE',
             pageType: pageType,
             url: url,
+            title: document.title,
+            jobLinks: jobLinks.length,
+            applyButtons: applyButtons.length,
             timestamp: new Date().toISOString()
         });
         console.log(`📄 [PAGE_TYPE] Sent to popup: ${pageType}`);
@@ -887,15 +895,23 @@ async runMainLoop() {
     this.log('🔄 [MAIN] Starting main loop...');
 
     while (!this.shouldStop && this.isRunning) {
-        const pageType = this.detectPageTypeAndLog();
+        if (this.navigationAttempts > 10) {
+            this.log('🚨 [SAFETY] Too many navigation attempts, stopping process.');
+            this.shouldStop = true;
+            break;
+        }
+
+        const pageType = await this.detectPageTypeAndLog();
 
         switch (pageType) {
             case 'jobList':
+                this.unknownPageCount = 0;
                 this.log('📋 [MAIN] Processing job list page...');
                 await this.processJobListPage();
 
                 if (!this.shouldStop) {
                     this.log('📄 [MAIN] Attempting to move to the next page...');
+                    this.navigationAttempts++;
                     const movedToNext = await this.moveToNextPage();
                     if (!movedToNext) {
                         this.log('✅ [MAIN] All pages finished.');
@@ -905,18 +921,29 @@ async runMainLoop() {
                 break;
 
             case 'jobDetails':
+                this.unknownPageCount = 0;
                 this.log('🔙 [MAIN] On details page, returning to list...');
+                this.navigationAttempts++;
                 await this.goBackToJobList();
                 break;
 
             case 'home':
+                this.unknownPageCount = 0;
                 this.log('🏠 [MAIN] On home page, navigating to jobs...');
+                this.navigationAttempts++;
                 await this.navigateToJobList();
                 await this.wait(3000);
                 break;
 
             default:
-                this.log('❓ [MAIN] Unknown page, navigating to list...');
+                this.unknownPageCount++;
+                this.log(`❓ [MAIN] Unknown page (${this.unknownPageCount}/3), navigating to list...`);
+                if (this.unknownPageCount >= 3) {
+                    this.log('🚨 [SAFETY] Too many unknown pages, stopping process.');
+                    this.shouldStop = true;
+                    break;
+                }
+                this.navigationAttempts++;
                 await this.navigateToJobList();
                 await this.wait(3000);
                 break;
@@ -1580,19 +1607,19 @@ async goBackToJobList() {
 }
 
     async navigateToJobList() {
-        this.log('🧭 [NAVIGATE] التنقل لقائمة الوظائف...');
+        this.log('🧭 [NAVIGATE] Navigating to job list...');
 
         try {
             const jobListUrl = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
 
             if (window.location.href !== jobListUrl) {
                 window.location.href = jobListUrl;
-                await this.wait(4000);
+                await this.wait(5000);
             }
 
             return true;
         } catch (error) {
-            this.log('❌ [NAVIGATE] خطأ في التنقل:', error);
+            this.log('❌ [NAVIGATE] Navigation failed:', error);
             return false;
         }
     }
