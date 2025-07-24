@@ -649,7 +649,39 @@ class JadaratAutoStable {
                     return null;
                 },
                 // Strategy 4: The direct parent container
-                () => link.closest('[data-container]')
+                () => link.closest('[data-container]'),
+                // New Strategy 5: Deep search
+                () => {
+                    let current = link;
+                    for (let i = 0; i < 8; i++) {
+                        current = current.parentElement;
+                        if (!current) break;
+
+                        if (current.querySelector('span.matching_score') ||
+                            current.querySelector('[data-expression]')) {
+                            return current;
+                        }
+                    }
+                    return null;
+                },
+
+                // New Strategy 6: Multiple class search
+                () => {
+                    return link.closest('[data-container], .job-card, .position-card, .card, .item');
+                },
+
+                // New Strategy 7: Size-based search
+                () => {
+                    let current = link.parentElement;
+                    while (current) {
+                        const rect = current.getBoundingClientRect();
+                        if (rect.height > 100 && rect.width > 200) {
+                            return current;
+                        }
+                        current = current.parentElement;
+                    }
+                    return null;
+                }
             ];
 
             for (let i = 0; i < strategies.length; i++) {
@@ -1039,6 +1071,44 @@ if (jobCards.length === 0) {
             console.log(`⏰ [JOB_END] Job ${index}/${total} ended at: ${new Date().toLocaleTimeString()}`);
             console.log(`🎯 [JOB_END] ===== End Job ${index}/${total} =====\n`);
         }
+    }
+
+    async processJobLogic(jobCard) {
+        // 1. Extract data
+        const jobData = this.extractJobDataFromHTML(jobCard);
+
+        // 2. Check already applied in card
+        if (jobData.alreadyApplied) {
+            this.appliedJobs.add(jobData.id);
+            this.stats.alreadyApplied++;
+            return 'already_applied_list';
+        }
+
+        // 3. Check memory
+        if (this.visitedJobs.has(jobData.id)) {
+            this.stats.fromMemory++;
+            this.stats.skipped++;
+            return 'visited_from_memory';
+        }
+
+        if (this.appliedJobs.has(jobData.id)) {
+            this.stats.fromMemory++;
+            this.stats.alreadyApplied++;
+            return 'applied_from_memory';
+        }
+
+        if (this.rejectedJobs.has(jobData.id)) {
+            this.stats.fromMemory++;
+            this.stats.rejected++;
+            return 'rejected_from_memory';
+        }
+
+        // 4. New job - full processing
+        const result = await this.processNewJob(jobData);
+        this.visitedJobs.add(jobData.id);
+        this.stats.total++;
+
+        return result;
     }
 
     detectDialogs() {
