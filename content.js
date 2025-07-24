@@ -850,7 +850,7 @@ async detectPageTypeAndLog() {
     if (pageType === 'unknown') {
         if (document.querySelector('a[href*="/Jadarat/JobDetails"]')) {
             pageType = 'jobList';
-        } else if (document.querySelector('.job-details-container') || Array.from(document.querySelectorAll('button[data-button]')).find(button => button.textContent.trim() === 'تقديم')) {
+        } else if (document.querySelector('.job-details-container') || Array.from(document.querySelectorAll('button[data-button]')).find(btn => btn.textContent.includes('تقديم'))) {
             pageType = 'jobDetails';
         }
     }
@@ -1225,22 +1225,22 @@ if (jobCards.length === 0) {
             const applicationResult = await this.attemptApplication();
 
             if (applicationResult.success) {
-                this.log('✅ [NEW_JOB] تم التقديم بنجاح!');
-                this.stats.applied++;
+                this.log('🎉 [NEW_JOB] Application successful!');
                 this.appliedJobs.add(jobData.id);
+                this.stats.applied++;
             } else {
-                this.log(`❌ [NEW_JOB] تم رفض التقديم: ${applicationResult.reason || 'سبب غير محدد'}`);
-                this.stats.rejected++;
+                this.log('❌ [NEW_JOB] Application rejected');
                 this.rejectedJobs.add(jobData.id);
-
-                await this.saveRejectionReason(jobData, applicationResult.reason);
+                this.stats.rejected++;
             }
 
- // ✅ العودة المباشرة بدون تأخير
-this.log('🔙 [NEW_JOB] العودة لقائمة الوظائف...');
-await this.goBackToJobList();
+            // Mandatory return to the job list
+            console.log('🔙 [NEW_JOB] Returning to job list...');
+            await this.goBackToJobList();
+            console.log('✅ [NEW_JOB] Successfully returned - ready for next job');
 
-return applicationResult.success ? 'applied_success' : 'applied_rejected';
+            await this.saveMemoryData();
+            return applicationResult.success ? 'applied_success' : 'applied_rejected';
 
         } catch (error) {
             this.logError('PROCESS_NEW_JOB', error, { jobData });
@@ -1567,6 +1567,51 @@ return applicationResult.success ? 'applied_success' : 'applied_rejected';
             console.log('❌ [SANDBOX] Alternative navigation failed');
             return false;
         }
+    }
+
+    async closeResultDialog(resultDialog) {
+        console.log('🚪 [CLOSE] Closing result dialog...');
+
+        const closeButton = resultDialog.dialog.querySelector('button[data-button]');
+        if (closeButton) {
+            await this.clickElementSafely(closeButton, 'result dialog close button');
+            console.log('✅ [CLOSE] Successfully closed result dialog');
+            return true;
+        }
+
+        console.log('❌ [CLOSE] Failed to find close button');
+        return false;
+    }
+
+    async waitForResultDialog() {
+        console.log('⏳ [RESULT] Waiting for result dialog...');
+
+        for (let attempt = 1; attempt <= 20; attempt++) {
+            console.log(`🔍 [RESULT] Attempt ${attempt}/20 to find result dialog`);
+
+            const resultDialogs = document.querySelectorAll('div[data-popup][role="dialog"]');
+
+            for (const dialog of resultDialogs) {
+                if (dialog.style.display === 'none') continue;
+
+                const dialogText = dialog.textContent;
+
+                if (dialogText.includes('تم تقديم طلبك')) {
+                    console.log('🎉 [SUCCESS] Application successful!');
+                    return { type: 'success', dialog: dialog };
+                }
+
+                if (dialogText.includes('عذراً ، لا يمكنك التقديم')) {
+                    console.log('❌ [REJECTED] Application rejected');
+                    const reason = this.extractRejectionReason(dialogText);
+                    return { type: 'rejection', dialog: dialog, reason: reason };
+                }
+            }
+            await this.wait(1000);
+        }
+
+        console.log('⏰ [TIMEOUT] Timed out waiting for result dialog');
+        return { type: 'timeout' };
     }
 
     async handleResultDialog() {
