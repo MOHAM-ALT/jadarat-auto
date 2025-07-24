@@ -12,6 +12,16 @@
 (function() {
     'use strict';
 
+    window.addEventListener('error', function(e) {
+        console.log('💥 [GLOBAL_ERROR] JavaScript error detected:', e.error);
+        console.log('📝 [GLOBAL_ERROR] Message:', e.message);
+        console.log('📍 [GLOBAL_ERROR] Source:', e.filename, 'Line:', e.lineno);
+    });
+
+    window.addEventListener('unhandledrejection', function(e) {
+        console.log('💥 [PROMISE_ERROR] Unhandled promise rejection:', e.reason);
+    });
+
     // فحص فوري للحماية من الحقن المزدوج
     if (window.jadaratAutoStableLoaded) {
         console.log('🛡️ [PROTECTION] System already loaded, avoiding double injection.');
@@ -1373,10 +1383,44 @@ if (jobCards.length === 0) {
                 return { success: false, reason: 'فشل في التأكيد' };
             }
 
-            this.log('⏳ [APPLY] انتظار نتيجة التقديم...');
-            const resultDialog = await this.handleResultDialog();
+            console.log('✅ [CONFIRM] Final confirmation button clicked');
+            console.log('⏳ [CONFIRM] Waiting for system response...');
 
-            return resultDialog;
+            try {
+                // Short wait for response
+                await this.wait(3000);
+                console.log('✅ [WAIT] Initial wait completed');
+
+                // Search for result dialog
+                console.log('🔍 [RESULT] Searching for result dialog...');
+                const resultDialog = await this.waitForResultDialog();
+                console.log('📋 [RESULT] Search result:', resultDialog);
+
+                if (resultDialog.type === 'success') {
+                    console.log('🎉 [SUCCESS] Application successful!');
+                    await this.handleSuccessDialog(resultDialog.dialog);
+                } else if (resultDialog.type === 'rejection') {
+                    console.log('❌ [REJECTED] Application rejected');
+                    await this.handleRejectionDialog(resultDialog.dialog);
+                } else {
+                    console.log('⏰ [TIMEOUT] Result dialog not found');
+                }
+
+                // Force return to job list
+                console.log('🔙 [RETURN] Starting return to job list...');
+                await this.goBackToJobList();
+                console.log('✅ [RETURN] Successfully returned');
+
+            } catch (error) {
+                console.log('💥 [ERROR] Error after confirmation click:', error);
+                console.log('📝 [ERROR] Stack trace:', error.stack);
+
+                // Attempt recovery
+                console.log('🔄 [RECOVERY] Attempting recovery...');
+                await this.handleApplicationError();
+            }
+
+            console.log('🏁 [CONFIRM] Confirmation processing completed');
 
         } catch (error) {
             this.log('❌ [APPLY] خطأ في محاولة التقديم:', error);
@@ -1584,34 +1628,81 @@ if (jobCards.length === 0) {
     }
 
     async waitForResultDialog() {
-        console.log('⏳ [RESULT] Waiting for result dialog...');
+        console.log('⏳ [RESULT] Starting wait for result dialog...');
 
-        for (let attempt = 1; attempt <= 20; attempt++) {
-            console.log(`🔍 [RESULT] Attempt ${attempt}/20 to find result dialog`);
+        const maxAttempts = 30; // 30 seconds
 
-            const resultDialogs = document.querySelectorAll('div[data-popup][role="dialog"]');
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            console.log(`🔍 [RESULT] Attempt ${attempt}/${maxAttempts}`);
 
-            for (const dialog of resultDialogs) {
-                if (dialog.style.display === 'none') continue;
+            // Search for all popup dialogs
+            const dialogs = document.querySelectorAll('div[data-popup][role="dialog"]');
+            console.log(`📊 [RESULT] Found ${dialogs.length} popup dialogs`);
+
+            for (let i = 0; i < dialogs.length; i++) {
+                const dialog = dialogs[i];
+                const isVisible = dialog.style.display !== 'none' && dialog.offsetWidth > 0;
+
+                console.log(`📋 [RESULT] Dialog ${i}: visible=${isVisible}`);
+
+                if (!isVisible) continue;
 
                 const dialogText = dialog.textContent;
+                console.log(`📝 [RESULT] Dialog ${i} text: "${dialogText.substring(0, 100)}..."`);
 
-                if (dialogText.includes('تم تقديم طلبك')) {
-                    console.log('🎉 [SUCCESS] Application successful!');
+                // Check for success dialog
+                if (dialogText.includes('تم تقديم طلبك') ||
+                    dialogText.includes('تم التقديم') ||
+                    dialogText.includes('بنجاح')) {
+                    console.log('🎉 [SUCCESS] Success dialog detected!');
                     return { type: 'success', dialog: dialog };
                 }
 
-                if (dialogText.includes('عذراً ، لا يمكنك التقديم')) {
-                    console.log('❌ [REJECTED] Application rejected');
-                    const reason = this.extractRejectionReason(dialogText);
-                    return { type: 'rejection', dialog: dialog, reason: reason };
+                // Check for rejection dialog
+                if (dialogText.includes('عذراً') ||
+                    dialogText.includes('لا يمكنك') ||
+                    dialogText.includes('رفض')) {
+                    console.log('❌ [REJECTED] Rejection dialog detected!');
+                    return { type: 'rejection', dialog: dialog };
                 }
             }
+
             await this.wait(1000);
         }
 
-        console.log('⏰ [TIMEOUT] Timed out waiting for result dialog');
+        console.log('⏰ [TIMEOUT] Result dialog wait timeout');
         return { type: 'timeout' };
+    }
+
+    async handleApplicationError() {
+        console.log('🔄 [RECOVERY] Starting error recovery process...');
+
+        try {
+            // Try to close any open dialogs
+            const openDialogs = document.querySelectorAll('div[data-popup][role="dialog"]');
+            console.log(`🚪 [RECOVERY] Found ${openDialogs.length} open dialogs`);
+
+            for (const dialog of openDialogs) {
+                if (dialog.style.display !== 'none') {
+                    const closeBtn = dialog.querySelector('button');
+                    if (closeBtn) {
+                        console.log('🚪 [RECOVERY] Closing dialog...');
+                        closeBtn.click();
+                        await this.wait(1000);
+                    }
+                }
+            }
+
+            // Force return to list
+            console.log('🔙 [RECOVERY] Force return to list...');
+            window.location.href = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
+            await this.wait(5000);
+
+            console.log('✅ [RECOVERY] Recovery successful');
+
+        } catch (recoveryError) {
+            console.log('💥 [RECOVERY] Recovery failed:', recoveryError);
+        }
     }
 
     async handleResultDialog() {
@@ -2290,3 +2381,7 @@ console.log(`
 // ========================================
 // 🔚 نهاية الملف - النظام المُصلح جاهز
 // ========================================
+
+setInterval(() => {
+    console.log('💓 [HEARTBEAT] System still running at:', new Date().toLocaleTimeString());
+}, 5000);
