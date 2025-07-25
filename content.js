@@ -1674,6 +1674,58 @@ if (jobCards.length === 0) {
         return { type: 'timeout' };
     }
 
+    async handleSuccessDialog(dialog) {
+        console.log('🎉 [SUCCESS] Starting success handling...');
+
+        try {
+            // Close success dialog
+            console.log('🚪 [SUCCESS] Closing success dialog...');
+            const closeButton = dialog.querySelector('button[data-button]');
+
+            if (closeButton) {
+                await this.clickElementSafely(closeButton, 'success dialog close');
+                console.log('✅ [SUCCESS] Successfully closed success dialog');
+            }
+
+            await this.wait(2000);
+
+            console.log('✅ [SUCCESS] Success handled successfully');
+            return { success: true };
+
+        } catch (error) {
+            console.log('💥 [SUCCESS] Error handling success:', error);
+            return { success: false };
+        }
+    }
+
+    async handleRejectionDialog(dialog) {
+        console.log('❌ [REJECTION] Starting rejection handling...');
+
+        try {
+            // Extract rejection reason
+            const rejectionText = dialog.textContent;
+            console.log('📝 [REJECTION] Rejection reason:', rejectionText);
+
+            // Close rejection dialog
+            console.log('🚪 [REJECTION] Closing rejection dialog...');
+            const closeButton = dialog.querySelector('button[data-button]');
+
+            if (closeButton) {
+                await this.clickElementSafely(closeButton, 'rejection dialog close');
+                console.log('✅ [REJECTION] Successfully closed rejection dialog');
+            }
+
+            await this.wait(2000);
+
+            console.log('✅ [REJECTION] Rejection handled successfully');
+            return { success: true };
+
+        } catch (error) {
+            console.log('💥 [REJECTION] Error handling rejection:', error);
+            return { success: false };
+        }
+    }
+
     async handleApplicationError() {
         console.log('🔄 [RECOVERY] Starting error recovery process...');
 
