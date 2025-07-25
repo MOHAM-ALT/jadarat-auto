@@ -1203,58 +1203,70 @@ if (jobCards.length === 0) {
         }
     }
 
-    async processNewJob(jobData) {
-        try {
-            this.log('🖱️ [NEW_JOB] النقر على رابط الوظيفة...');
+    async handleJobDetailsPage() {
+        this.log('📄 [DETAILS] Handling job details page...');
+        const navigationSuccess = await this.waitForNavigationToDetails();
+        if (!navigationSuccess) {
+            this.log('❌ [DETAILS] Failed to navigate to details page');
+            this.stats.errors++;
+            return { success: false, reason: 'navigation_failed' };
+        }
 
+        this.log('✅ [DETAILS] Successfully navigated to details page');
+
+        await this.handleAnyPopups();
+
+        const alreadyAppliedInDetails = await this.checkIfAlreadyAppliedInDetails();
+        if (alreadyAppliedInDetails) {
+            this.log('✅ [DETAILS] Already applied (from details)');
+            return { success: false, reason: 'already_applied_details' };
+        }
+
+        this.log('🎯 [DETAILS] Starting application process...');
+        return await this.attemptApplication();
+    }
+
+    async processNewJob(jobData) {
+        console.log('🎯 [NEW_JOB] Starting new job processing...');
+
+        try {
+            // 1. Click job and navigate
             await this.clickElementSafely(jobData.element);
 
-            this.log('⏳ [NEW_JOB] انتظار تحميل صفحة التفاصيل...');
-            const navigationSuccess = await this.waitForNavigationToDetails();
+            // 2. Handle details page
+            const applicationResult = await this.handleJobDetailsPage();
 
-            if (!navigationSuccess) {
-                this.log('❌ [NEW_JOB] فشل في الانتقال لصفحة التفاصيل');
-                this.stats.errors++;
-                return 'navigation_failed';
+            // 3. Return to list (without reload)
+            await this.returnToJobListSafely();
+
+            // 4. Confirm return to list
+            const pageType = this.detectPageType();
+            if (pageType !== 'jobList') {
+                console.log('❌ [NEW_JOB] Failed to return to list!');
+                throw new Error('Failed to return to job list');
             }
 
-            this.log('✅ [NEW_JOB] تم الانتقال لصفحة التفاصيل');
+            console.log('✅ [NEW_JOB] Job completed and returned successfully');
 
-            await this.handleAnyPopups();
-
-            const alreadyAppliedInDetails = await this.checkIfAlreadyAppliedInDetails();
-            if (alreadyAppliedInDetails) {
-                this.log('✅ [NEW_JOB] تم التقدم مسبقاً (من التفاصيل)');
-                this.stats.alreadyApplied++;
-                this.appliedJobs.add(jobData.id);
-                await this.goBackToJobList();
-                return 'already_applied_details';
-            }
-
-            this.log('🎯 [NEW_JOB] بدء عملية التقديم...');
-            const applicationResult = await this.attemptApplication();
-
+            // 5. Save result
             if (applicationResult.success) {
-                this.log('🎉 [NEW_JOB] Application successful!');
                 this.appliedJobs.add(jobData.id);
                 this.stats.applied++;
             } else {
-                this.log('❌ [NEW_JOB] Application rejected');
                 this.rejectedJobs.add(jobData.id);
                 this.stats.rejected++;
             }
 
-            // Mandatory return to the job list
-            console.log('🔙 [NEW_JOB] Returning to job list...');
-            await this.goBackToJobList();
-            console.log('✅ [NEW_JOB] Successfully returned - ready for next job');
-
-            await this.saveMemoryData();
+            // 6. Clear signal to main loop to continue
+            console.log('🔄 [NEW_JOB] Ready to process next job');
             return applicationResult.success ? 'applied_success' : 'applied_rejected';
 
         } catch (error) {
-            this.logError('PROCESS_NEW_JOB', error, { jobData });
-            await this.recoverFromDialogFailure();
+            console.log('❌ [NEW_JOB] Error processing job:', error);
+
+            // Try to return to list on error
+            await this.returnToJobListSafely();
+
             return 'error';
         }
     }
@@ -1858,6 +1870,68 @@ if (jobCards.length === 0) {
     // ========================
     // 🔄 التنقل والعودة المُحسنة
     // ========================
+
+    async returnToJobListSafely() {
+        console.log('🔙 [SAFE_RETURN] Starting safe return to list...');
+
+        try {
+            // 1. Check current page
+            const currentUrl = window.location.href;
+            console.log('🔍 [SAFE_RETURN] Current page:', currentUrl);
+
+            if (currentUrl.includes('/Jadarat/ExploreJobs')) {
+                console.log('✅ [SAFE_RETURN] Already on list');
+                return true;
+            }
+
+            // 2. Try returning with history.back()
+            console.log('🔄 [SAFE_RETURN] Using history.back()...');
+            window.history.back();
+
+            // 3. Wait for return
+            await this.wait(3000);
+
+            // 4. Check if return succeeded
+            const newPageType = this.detectPageType();
+
+            if (newPageType === 'jobList') {
+                console.log('✅ [SAFE_RETURN] Returned successfully');
+                return true;
+            }
+
+            // 5. If history.back() failed, look for back button
+            console.log('🔍 [SAFE_RETURN] Looking for back button on page...');
+
+            const backButtons = [
+                'a[href*="ExploreJobs"]',
+                'button:contains("عودة")',
+                '.back-button',
+                'a:contains("قائمة الوظائف")'
+            ];
+
+            for (const selector of backButtons) {
+                const backButton = document.querySelector(selector);
+                if (backButton && backButton.offsetWidth > 0) {
+                    console.log(`🖱️ [SAFE_RETURN] Clicking back button: ${selector}`);
+                    await this.clickElementSafely(backButton, 'back button');
+                    await this.wait(3000);
+
+                    const pageType = this.detectPageType();
+                    if (pageType === 'jobList') {
+                        console.log('✅ [SAFE_RETURN] Returned via back button');
+                        return true;
+                    }
+                }
+            }
+
+            console.log('❌ [SAFE_RETURN] All return methods failed');
+            return false;
+
+        } catch (error) {
+            console.log('❌ [SAFE_RETURN] Error in return:', error);
+            return false;
+        }
+    }
 
 async goBackToJobList() {
     this.log('🔙 [BACK] العودة المُحسنة لقائمة الوظائف...');
