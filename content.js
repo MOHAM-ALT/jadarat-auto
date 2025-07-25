@@ -934,73 +934,106 @@ async detectPageTypeAndLog() {
     }
 
 async runMainLoop() {
-    this.log('🔄 [MAIN] Starting main loop...');
+    console.log('🔄 [MAIN] Starting main loop...');
 
-    while (!this.shouldStop && this.isRunning) {
-        if (this.navigationAttempts > 10) {
-            this.log('🚨 [SAFETY] Too many navigation attempts, stopping process.');
-            this.shouldStop = true;
-            break;
-        }
+    while (!this.shouldStop) {
+        try {
+            const pageType = this.detectPageType();
+            console.log(`🔍 [MAIN] Current page type: ${pageType}`);
 
-        const pageType = await this.detectPageTypeAndLog();
+            if (pageType === 'jobList') {
+                console.log('📋 [MAIN] Processing job list page...');
 
-        switch (pageType) {
-            case 'jobList':
-                this.unknownPageCount = 0;
-                this.log('📋 [MAIN] Processing job list page...');
-                await this.processJobListPage();
+                // Process job list
+                const hasMoreJobs = await this.processJobListPage();
 
-                if (!this.shouldStop) {
-                    this.log('📄 [MAIN] Attempting to move to the next page...');
-                    this.navigationAttempts++;
+                if (hasMoreJobs) {
+                    console.log('✅ [MAIN] Page completed, searching for more...');
+                    // Continue on same page or move to next
+                } else {
+                    console.log('🔄 [MAIN] No more jobs, moving to next page...');
                     const movedToNext = await this.moveToNextPage();
+
                     if (!movedToNext) {
-                        this.log('✅ [MAIN] All pages finished.');
-                        this.shouldStop = true;
+                        console.log('🏁 [MAIN] No more pages available');
+                        break;
                     }
                 }
-                break;
 
-            case 'jobDetails':
-                this.unknownPageCount = 0;
-                this.log('🔙 [MAIN] On details page, returning to list...');
-                this.navigationAttempts++;
-                await this.goBackToJobList();
-                break;
+            } else if (pageType === 'jobDetails') {
+                console.log('📄 [MAIN] On job details page - attempting safe return...');
 
-            case 'home':
-                this.unknownPageCount = 0;
-                this.log('🏠 [MAIN] On home page, navigating to jobs...');
-                this.navigationAttempts++;
-                await this.navigateToJobList();
-                await this.wait(3000);
-                break;
+                // Attempt safe return
+                const returnSuccess = await this.returnToJobListSafely();
 
-            default:
-                this.unknownPageCount++;
-                this.log(`❓ [MAIN] Unknown page (${this.unknownPageCount}/3), navigating to list...`);
-                if (this.unknownPageCount >= 3) {
-                    this.log('🚨 [SAFETY] Too many unknown pages, stopping process.');
-                    this.shouldStop = true;
-                    break;
+                if (!returnSuccess) {
+                    console.log('⚠️ [MAIN] Safe return failed - will retry next cycle');
+                    // Don't stop system, try again in next cycle
+                    await this.wait(3000);
                 }
-                this.navigationAttempts++;
-                await this.navigateToJobList();
-                await this.wait(3000);
-                break;
-        }
 
-        await this.wait(500);
+            } else if (pageType === 'unknown') {
+                console.log('❓ [MAIN] Unknown page - attempting navigation...');
 
-        if (this.stats.total % 10 === 0 && this.stats.total > 0) {
-            this.checkSystemHealth();
+                // Simple attempt without reload
+                const currentUrl = window.location.href;
+
+                if (!currentUrl.includes('ExploreJobs')) {
+                    console.log('🔄 [MAIN] Not on job list - using history.back()...');
+                    window.history.back();
+                    await this.wait(3000);
+                } else {
+                    console.log('🔄 [MAIN] On job list but not detected - refreshing detection...');
+                    await this.wait(2000);
+                }
+            }
+
+            // Short wait between cycles
+            await this.wait(1000);
+
+        } catch (error) {
+            console.log('❌ [MAIN] Error in main loop:', error);
+
+            // Try to recover
+            await this.recoverFromError();
+
+            // Longer wait before trying again
+            await this.wait(5000);
         }
     }
 
-    this.log('🏁 [MAIN] Main loop finished.');
-    await this.displayFinalResults();
+    console.log('🏁 [MAIN] Main loop finished');
 }
+
+    async recoverFromError() {
+        console.log('🔄 [RECOVERY] Starting error recovery process...');
+
+        try {
+            // Try to close any open dialogs
+            const openDialogs = document.querySelectorAll('div[data-popup][role="dialog"]');
+            console.log(`🚪 [RECOVERY] Found ${openDialogs.length} open dialogs`);
+
+            for (const dialog of openDialogs) {
+                if (dialog.style.display !== 'none') {
+                    const closeBtn = dialog.querySelector('button');
+                    if (closeBtn) {
+                        console.log('🚪 [RECOVERY] Closing dialog...');
+                        closeBtn.click();
+                        await this.wait(1000);
+                    }
+                }
+            }
+
+            // Force return to list
+            console.log('🔙 [RECOVERY] Force return to list...');
+            await this.returnToJobListSafely();
+
+            console.log('✅ [RECOVERY] Recovery successful');
+
+        } catch (recoveryError) {
+            console.log('💥 [RECOVERY] Recovery failed:', recoveryError);
+        }
+    }
 
     async processJobListPage() {
         this.log('📋 [PAGE] معالجة صفحة قائمة الوظائف المُحسنة...');
@@ -1759,8 +1792,7 @@ if (jobCards.length === 0) {
 
             // Force return to list
             console.log('🔙 [RECOVERY] Force return to list...');
-            window.location.href = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
-            await this.wait(5000);
+            await this.returnToJobListSafely();
 
             console.log('✅ [RECOVERY] Recovery successful');
 
@@ -1875,85 +1907,47 @@ if (jobCards.length === 0) {
         console.log('🔙 [SAFE_RETURN] Starting safe return to list...');
 
         try {
-            // 1. Check current page
-            const currentUrl = window.location.href;
-            console.log('🔍 [SAFE_RETURN] Current page:', currentUrl);
-
-            if (currentUrl.includes('/Jadarat/ExploreJobs')) {
-                console.log('✅ [SAFE_RETURN] Already on list');
-                return true;
-            }
-
-            // 2. Try returning with history.back()
+            // Only safe attempt: history.back()
             console.log('🔄 [SAFE_RETURN] Using history.back()...');
             window.history.back();
 
-            // 3. Wait for return
-            await this.wait(3000);
+            // Wait for return
+            await this.wait(4000);
 
-            // 4. Check if return succeeded
-            const newPageType = this.detectPageType();
+            // Check if return succeeded
+            const currentUrl = window.location.href;
+            console.log('🔍 [SAFE_RETURN] URL after return:', currentUrl);
 
-            if (newPageType === 'jobList') {
-                console.log('✅ [SAFE_RETURN] Returned successfully');
+            const pageType = this.detectPageType();
+            console.log('🔍 [SAFE_RETURN] Page type after return:', pageType);
+
+            if (pageType === 'jobList') {
+                console.log('✅ [SAFE_RETURN] Returned successfully - context preserved');
                 return true;
+            } else {
+                console.log('❌ [SAFE_RETURN] Return failed - but won\'t reload!');
+                console.log('⚠️ [SAFE_RETURN] Will try again in next cycle');
+                return false;
             }
-
-            // 5. If history.back() failed, look for back button
-            console.log('🔍 [SAFE_RETURN] Looking for back button on page...');
-
-            const backButtons = [
-                'a[href*="ExploreJobs"]',
-                'button:contains("عودة")',
-                '.back-button',
-                'a:contains("قائمة الوظائف")'
-            ];
-
-            for (const selector of backButtons) {
-                const backButton = document.querySelector(selector);
-                if (backButton && backButton.offsetWidth > 0) {
-                    console.log(`🖱️ [SAFE_RETURN] Clicking back button: ${selector}`);
-                    await this.clickElementSafely(backButton, 'back button');
-                    await this.wait(3000);
-
-                    const pageType = this.detectPageType();
-                    if (pageType === 'jobList') {
-                        console.log('✅ [SAFE_RETURN] Returned via back button');
-                        return true;
-                    }
-                }
-            }
-
-            console.log('❌ [SAFE_RETURN] All return methods failed');
-            return false;
 
         } catch (error) {
             console.log('❌ [SAFE_RETURN] Error in return:', error);
+            console.log('⚠️ [SAFE_RETURN] Will try again in next cycle');
             return false;
         }
     }
 
 async goBackToJobList() {
-    this.log('🔙 [BACK] العودة المُحسنة لقائمة الوظائف...');
+        this.log('🔙 [BACK] Returning to job list...');
 
-    try {
-        // ✅ التنقل المباشر (الطريقة الوحيدة التي تعمل مع SPA)
-        const jobListUrl = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
-
-        this.log('🔄 [BACK] التنقل المباشر للقائمة...');
-        window.location.href = jobListUrl;
-
-        // ✅ انتظار كافي للتحميل
-        await this.wait(5000);
-
-        this.log('✅ [BACK] تم التنقل المباشر بنجاح');
-        return true;
-
-    } catch (error) {
-        this.log('❌ [BACK] خطأ في العودة:', error);
-        return false;
+        try {
+            await this.returnToJobListSafely();
+            return true;
+        } catch (error) {
+            this.log('❌ [BACK] Failed to go back to job list:', error);
+            return false;
+        }
     }
-}
 
     async navigateToJobList() {
         this.log('🧭 [NAVIGATE] Navigating to job list...');
@@ -1961,8 +1955,8 @@ async goBackToJobList() {
         try {
             const jobListUrl = 'https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1';
 
-            if (window.location.href !== jobListUrl) {
-                window.location.href = jobListUrl;
+            if (!window.location.href.includes('/Jadarat/ExploreJobs')) {
+                window.history.pushState({}, '', jobListUrl);
                 await this.wait(5000);
             }
 
