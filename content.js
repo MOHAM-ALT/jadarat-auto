@@ -1251,21 +1251,38 @@ if (jobCards.length === 0) {
             const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
             if (alreadyApplied) {
                 console.log('⚠️ [DETAILS] Already applied, returning to list...');
-                await this.returnToJobListSafely();
-                return { success: false, action: 'already_applied_details' };
+
+                // Mandatory return to list
+                const returnSuccess = await this.returnToJobListSafely();
+                if (returnSuccess) {
+                    return { success: false, action: 'already_applied_details' };
+                } else {
+                    return { success: false, action: 'return_failed' };
+                }
             }
 
             // Start application process
             console.log('🎯 [DETAILS] Starting application process...');
             const applicationResult = await this.attemptApplication();
 
+            // ✅ attemptApplication handles returning to list
             console.log('✅ [DETAILS] Job details processing completed');
+            console.log('📋 [DETAILS] Application result:', applicationResult);
+
+            // Verify successful return to list
+            const currentPageType = this.detectPageType();
+            if (currentPageType !== 'jobList') {
+                console.log('⚠️ [DETAILS] Not on job list after processing - forcing return...');
+                await this.returnToJobListSafely();
+            }
+
             return applicationResult;
 
         } catch (error) {
             console.log('❌ [DETAILS] Error in job details processing:', error);
 
-            // Emergency return only on error
+            // Emergency return on error
+            console.log('🔙 [DETAILS] Emergency return to job list...');
             await this.returnToJobListSafely();
             return { success: false, action: 'error' };
         }
@@ -1445,18 +1462,50 @@ if (jobCards.length === 0) {
                 if (resultDialog.type === 'success') {
                     console.log('🎉 [SUCCESS] Application successful!');
                     await this.handleSuccessDialog(resultDialog.dialog);
-                    return { success: true, action: 'applied_success' };
+
+                    // ✅ Mandatory return to list after success
+                    console.log('🔙 [RETURN] Starting return to job list after success...');
+                    const returnSuccess = await this.returnToJobListSafely();
+
+                    if (returnSuccess) {
+                        console.log('✅ [RETURN] Successfully returned to job list');
+                        return { success: true, action: 'applied_success' };
+                    } else {
+                        console.log('❌ [RETURN] Failed to return to job list');
+                        return { success: false, action: 'return_failed' };
+                    }
+
                 } else if (resultDialog.type === 'rejection') {
                     console.log('❌ [REJECTED] Application rejected');
                     await this.handleRejectionDialog(resultDialog.dialog);
-                    return { success: false, action: 'applied_rejected' };
+
+                    // ✅ Mandatory return to list after rejection
+                    console.log('🔙 [RETURN] Starting return to job list after rejection...');
+                    const returnSuccess = await this.returnToJobListSafely();
+
+                    if (returnSuccess) {
+                        console.log('✅ [RETURN] Successfully returned to job list');
+                        return { success: false, action: 'applied_rejected' };
+                    } else {
+                        console.log('❌ [RETURN] Failed to return to job list');
+                        return { success: false, action: 'return_failed' };
+                    }
+
                 } else {
-                    console.log('⏰ [TIMEOUT] Result dialog not found');
+                    console.log('⏰ [TIMEOUT] No result dialog found');
+                    // Return even on timeout
+                    console.log('🔙 [RETURN] Starting return to job list after timeout...');
+                    await this.returnToJobListSafely();
                     return { success: false, action: 'timeout' };
                 }
+
             } catch (error) {
                 console.log('💥 [ERROR] Error after confirmation click:', error);
-                await this.handleApplicationError();
+
+                // Return even on error
+                console.log('🔙 [RETURN] Starting return to job list after error...');
+                await this.returnToJobListSafely();
+
                 return { success: false, action: 'error' };
             }
 
