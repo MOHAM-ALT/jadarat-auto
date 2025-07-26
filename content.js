@@ -1237,69 +1237,70 @@ if (jobCards.length === 0) {
     }
 
     async handleJobDetailsPage() {
-        this.log('📄 [DETAILS] Handling job details page...');
-        const navigationSuccess = await this.waitForNavigationToDetails();
-        if (!navigationSuccess) {
-            this.log('❌ [DETAILS] Failed to navigate to details page');
-            this.stats.errors++;
-            return { success: false, reason: 'navigation_failed' };
+        console.log('📄 [DETAILS] Handling job details page...');
+
+        try {
+            // Wait for page load
+            await this.waitForNavigationToDetails();
+            console.log('✅ [DETAILS] Successfully navigated to details page');
+
+            // Check for popups
+            await this.handleAnyPopups();
+
+            // Check previous application
+            const alreadyApplied = await this.checkIfAlreadyAppliedInDetails();
+            if (alreadyApplied) {
+                console.log('⚠️ [DETAILS] Already applied, returning to list...');
+                await this.returnToJobListSafely();
+                return { success: false, action: 'already_applied_details' };
+            }
+
+            // Start application process
+            console.log('🎯 [DETAILS] Starting application process...');
+            const applicationResult = await this.attemptApplication();
+
+            console.log('✅ [DETAILS] Job details processing completed');
+            return applicationResult;
+
+        } catch (error) {
+            console.log('❌ [DETAILS] Error in job details processing:', error);
+
+            // Emergency return only on error
+            await this.returnToJobListSafely();
+            return { success: false, action: 'error' };
         }
-
-        this.log('✅ [DETAILS] Successfully navigated to details page');
-
-        await this.handleAnyPopups();
-
-        const alreadyAppliedInDetails = await this.checkIfAlreadyAppliedInDetails();
-        if (alreadyAppliedInDetails) {
-            this.log('✅ [DETAILS] Already applied (from details)');
-            return { success: false, reason: 'already_applied_details' };
-        }
-
-        this.log('🎯 [DETAILS] Starting application process...');
-        return await this.attemptApplication();
     }
 
     async processNewJob(jobData) {
         console.log('🎯 [NEW_JOB] Starting new job processing...');
 
         try {
-            // 1. Click job and navigate
+            // Click job link
             await this.clickElementSafely(jobData.element);
 
-            // 2. Handle details page
-            const applicationResult = await this.handleJobDetailsPage();
+            // Handle details page (includes return)
+            const detailsResult = await this.handleJobDetailsPage();
 
-            // 3. Return to list (without reload)
-            await this.returnToJobListSafely();
-
-            // 4. Confirm return to list
-            const pageType = this.detectPageType();
-            if (pageType !== 'jobList') {
-                console.log('❌ [NEW_JOB] Failed to return to list!');
-                throw new Error('Failed to return to job list');
-            }
-
-            console.log('✅ [NEW_JOB] Job completed and returned successfully');
-
-            // 5. Save result
-            if (applicationResult.success) {
+            // Update statistics based on result
+            if (detailsResult.success && detailsResult.action === 'applied_success') {
                 this.appliedJobs.add(jobData.id);
                 this.stats.applied++;
-            } else {
+                console.log('✅ [NEW_JOB] Job applied successfully');
+                return 'applied_success';
+
+            } else if (detailsResult.action === 'applied_rejected') {
                 this.rejectedJobs.add(jobData.id);
                 this.stats.rejected++;
+                console.log('❌ [NEW_JOB] Job application rejected');
+                return 'applied_rejected';
+
+            } else {
+                console.log('⚠️ [NEW_JOB] Job processing completed with issues');
+                return 'processing_completed';
             }
 
-            // 6. Clear signal to main loop to continue
-            console.log('🔄 [NEW_JOB] Ready to process next job');
-            return applicationResult.success ? 'applied_success' : 'applied_rejected';
-
         } catch (error) {
-            console.log('❌ [NEW_JOB] Error processing job:', error);
-
-            // Try to return to list on error
-            await this.returnToJobListSafely();
-
+            console.log('❌ [NEW_JOB] Error in new job processing:', error);
             return 'error';
         }
     }
@@ -1444,28 +1445,20 @@ if (jobCards.length === 0) {
                 if (resultDialog.type === 'success') {
                     console.log('🎉 [SUCCESS] Application successful!');
                     await this.handleSuccessDialog(resultDialog.dialog);
+                    return { success: true, action: 'applied_success' };
                 } else if (resultDialog.type === 'rejection') {
                     console.log('❌ [REJECTED] Application rejected');
                     await this.handleRejectionDialog(resultDialog.dialog);
+                    return { success: false, action: 'applied_rejected' };
                 } else {
                     console.log('⏰ [TIMEOUT] Result dialog not found');
+                    return { success: false, action: 'timeout' };
                 }
-
-                // Force return to job list
-                console.log('🔙 [RETURN] Starting return to job list...');
-                await this.goBackToJobList();
-                console.log('✅ [RETURN] Successfully returned');
-
             } catch (error) {
                 console.log('💥 [ERROR] Error after confirmation click:', error);
-                console.log('📝 [ERROR] Stack trace:', error.stack);
-
-                // Attempt recovery
-                console.log('🔄 [RECOVERY] Attempting recovery...');
                 await this.handleApplicationError();
+                return { success: false, action: 'error' };
             }
-
-            console.log('🏁 [CONFIRM] Confirmation processing completed');
 
         } catch (error) {
             this.log('❌ [APPLY] خطأ في محاولة التقديم:', error);
