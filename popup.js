@@ -162,12 +162,10 @@ constructor() {
 
             // فحص URL
             if (!tab.url || !tab.url.includes('jadarat.sa')) {
-                this.showError('يرجى الانتقال إلى موقع جدارات (jadarat.sa)');
-                this.updateConnectionStatus('disconnected', 'ليس في موقع جدارات');
-                this.hideLoadingOverlay();
-                this.showDebugSection('URL غير صحيح', tab.url);
-                return;
-            }
+    console.warn('⚠️ [INIT] Not on Jadarat website, but continuing...');
+    this.updateConnectionDetails('تحذير: ليس في موقع جدارات');
+    // ✅ لا نعود هنا - نكمل المحاولة
+}
 
             this.updateConnectionStatus('connecting', 'جاري الاتصال...');
 
@@ -506,9 +504,17 @@ constructor() {
             console.log('🚀 بدء التشغيل...');
 
             // التأكد من الاتصال قبل البدء
-            if (!this.isConnected) {
-                await this.ensureConnection();
-            }
+            // ✅ محاولة الاتصال مع المرونة
+if (!this.isConnected) {
+    console.log('🔄 [START] Attempting to establish connection...');
+    try {
+        await this.ensureConnection();
+    } catch (error) {
+        console.log('⚠️ [START] Connection failed, but starting anyway...');
+        this.isConnected = true; // افتراض الاتصال
+        this.updateConnectionStatus('connecting', 'محاولة الاتصال...');
+    }
+}
 
             this.isRunning = true;
             this.isPaused = false;
@@ -668,11 +674,20 @@ constructor() {
         }
     }
 
-    handleMessage(message) {
-        console.log('📨 استلام رسالة من content script:', message.action);
+handleMessage(message) {
+    console.log('📨 استلام رسالة من content script:', message.action);
 
-        try {
-            switch (message.action) {
+    // ✅ إصلاح الاتصال عند وصول أي رسالة
+    if (!this.isConnected) {
+        console.log('🔄 [CONNECTION] Auto-restoring connection...');
+        this.isConnected = true;
+        this.updateConnectionStatus('connected', 'متصل - تم الاستئناف');
+        this.enableControls();
+        this.hideErrorModal();
+    }
+
+    try {
+        switch (message.action) {
                 case 'UPDATE_PROGRESS':
                     this.setProgress(message.progress, message.text);
                     break;
