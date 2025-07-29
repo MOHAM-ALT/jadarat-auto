@@ -132,7 +132,8 @@ class JadaratAutoStable {
         this.debugMode = true;
         this.stepByStepMode = false;
         this.currentJobTitle = null;
-
+this.lastPageTypeUpdate = null;
+    this.messageThrottle = {};
         this.init();
     }
 
@@ -628,7 +629,60 @@ class JadaratAutoStable {
             return [];
         }
     }
-
+async findValidJobElement(targetIndex) {
+    console.log(`🔍 [MANUAL_SEARCH] Searching for valid job element at position ${targetIndex}...`);
+    
+    try {
+        // انتظار قصير للاستقرار
+        await this.wait(1000);
+        
+        // البحث عن جميع الوظائف المرئية
+        const allJobLinks = document.querySelectorAll('a[href*="/Jadarat/JobDetails"]');
+        const visibleJobs = [];
+        
+        for (const link of allJobLinks) {
+            if (link.offsetWidth > 0 && link.offsetHeight > 0) {
+                const container = this.findJobCardContainerImproved(link);
+                if (container) {
+                    visibleJobs.push({
+                        index: visibleJobs.length,
+                        link: link,
+                        container: container
+                    });
+                }
+            }
+        }
+        
+        console.log(`📊 [MANUAL_SEARCH] Found ${visibleJobs.length} visible jobs`);
+        
+        // إذا وجد الوظيفة في الفهرس المطلوب
+        if (visibleJobs[targetIndex]) {
+            console.log(`✅ [MANUAL_SEARCH] Found job at index ${targetIndex}`);
+            return visibleJobs[targetIndex];
+        }
+        
+        // إذا لم يجدها، ابحث عن أول وظيفة صالحة
+        for (const job of visibleJobs) {
+            const jobData = this.extractJobDataFromHTML(job);
+            
+            // تحقق من أنها ليست مزارة من قبل
+            if (!this.visitedJobs.has(jobData.id) && 
+                !this.appliedJobs.has(jobData.id) && 
+                !this.rejectedJobs.has(jobData.id) &&
+                !jobData.alreadyApplied) {
+                console.log(`✅ [MANUAL_SEARCH] Found unvisited job: "${jobData.title}"`);
+                return job;
+            }
+        }
+        
+        console.log(`❌ [MANUAL_SEARCH] No valid jobs found`);
+        return null;
+        
+    } catch (error) {
+        console.log(`❌ [MANUAL_SEARCH] Error in manual search:`, error);
+        return null;
+    }
+}
     findJobCardContainerImproved(link) {
         try {
             const strategies = [
@@ -809,36 +863,45 @@ class JadaratAutoStable {
 
     setupMessageListener() {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-            this.log(`📨 [MESSAGE] تم استلام رسالة: ${message.action}`);
+    this.log(`📨 [MESSAGE] تم استلام رسالة: ${message.action}`);
 
-            switch (message.action) {
-                case 'START_AUTOMATION':
-                case 'START_AUTO_APPLY':
-                    this.startProcess(message.settings);
-                    sendResponse({ success: true });
-                    break;
+    // ✅ معالجة آمنة مع رد فوري
+    let handled = false;
 
-                case 'STOP_AUTOMATION':
-                case 'STOP_AUTO_APPLY':
-                    this.stopProcess();
-                    sendResponse({ success: true });
-                    break;
+    switch (message.action) {
+        case 'START_AUTOMATION':
+        case 'START_AUTO_APPLY':
+            this.startProcess(message.settings);
+            sendResponse({ success: true });
+            handled = true;
+            break;
 
-                case 'GET_STATUS':
-                    sendResponse(this.getStatus());
-                    break;
+        case 'STOP_AUTOMATION':
+        case 'STOP_AUTO_APPLY':
+            this.stopProcess();
+            sendResponse({ success: true });
+            handled = true;
+            break;
 
-                case 'PING':
-                    sendResponse({ status: 'active' });
-                    break;
+        case 'GET_STATUS':
+            sendResponse(this.getStatus());
+            handled = true;
+            break;
 
-                default:
-                    this.log(`⚠️ [MESSAGE] رسالة غير معروفة: ${message.action}`);
-                    sendResponse({ success: false, error: 'Unknown action' });
-            }
+        case 'PING':
+            sendResponse({ status: 'active' });
+            handled = true;
+            break;
 
-            return true;
-        });
+        default:
+            console.log(`⚠️ [MESSAGE] رسالة غير معروفة: ${message.action}`);
+            sendResponse({ success: false, error: 'Unknown action' });
+            handled = true;
+    }
+
+    // ✅ رد فوري - لا نحتاج return true
+    return false;
+});
 
         this.log('📨 [MESSAGE] تم تهيئة مستمع الرسائل');
     }
@@ -866,23 +929,38 @@ async detectPageTypeAndLog() {
     }
 
     // CRITICAL: Send page type to popup
-    try {
-        const jobLinks = document.querySelectorAll('a[href*="/Jadarat/JobDetails"]');
-        const applyButtons = document.querySelectorAll('button[data-button]:contains("تقديم")');
+ // ✅ إرسال آمن ومُحسن
+try {
+    const jobLinks = document.querySelectorAll('a[href*="/Jadarat/JobDetails"]');
+    const applyButtons = Array.from(document.querySelectorAll('button[data-button]')).filter(btn => btn.textContent.includes('تقديم'));
 
-        await chrome.runtime.sendMessage({
-            type: 'PAGE_TYPE_UPDATE',
-            pageType: pageType,
-            url: url,
-            title: document.title,
-            jobLinks: jobLinks.length,
-            applyButtons: applyButtons.length,
-            timestamp: new Date().toISOString()
-        });
-        console.log(`📄 [PAGE_TYPE] Sent to popup: ${pageType}`);
-    } catch (error) {
-        console.log(`❌ [PAGE_TYPE] Failed to send to popup: ${error.message}`);
+    // تجنب الرسائل المتكررة
+    const updateKey = `${pageType}-${url}`;
+    if (this.lastPageTypeUpdate === updateKey) {
+        return pageType;
     }
+    this.lastPageTypeUpdate = updateKey;
+
+    // إرسال آمن بدون انتظار
+    chrome.runtime.sendMessage({
+        type: 'PAGE_TYPE_UPDATE',
+        pageType: pageType,
+        url: url,
+        title: document.title,
+        jobLinks: jobLinks.length,
+        applyButtons: applyButtons.length,
+        timestamp: new Date().toISOString()
+    }, (response) => {
+        if (chrome.runtime.lastError) {
+            // تجاهل الخطأ - popup مُغلق
+            console.log('📄 [PAGE_TYPE] Popup closed, continuing...');
+        } else {
+            console.log(`📄 [PAGE_TYPE] Sent to popup: ${pageType}`);
+        }
+    });
+} catch (error) {
+    console.log(`❌ [PAGE_TYPE] Failed to send to popup: ${error.message}`);
+}
 
     if (this.lastPageType !== pageType) {
         this.log(`🎯 [PAGE] Page type detected: ${pageType}`);
@@ -941,24 +1019,31 @@ async runMainLoop() {
             const pageType = this.detectPageType();
             console.log(`🔍 [MAIN] Current page type: ${pageType}`);
 
-            if (pageType === 'jobList') {
-                console.log('📋 [MAIN] Processing job list page...');
+if (pageType === 'jobList') {
+    console.log('📋 [MAIN] Processing job list page...');
 
-                // Process job list
-                const hasMoreJobs = await this.processJobListPage();
-
-                if (hasMoreJobs) {
-                    console.log('✅ [MAIN] Page completed, searching for more...');
-                    // Continue on same page or move to next
-                } else {
-                    console.log('🔄 [MAIN] No more jobs, moving to next page...');
-                    const movedToNext = await this.moveToNextPage();
-
-                    if (!movedToNext) {
-                        console.log('🏁 [MAIN] No more pages available');
-                        break;
-                    }
-                }
+    // ✅ معالجة مستمرة للصفحة
+    try {
+        const hasMoreJobs = await this.processJobListPage();
+        
+        if (!hasMoreJobs) {
+            console.log('📄 [MAIN] Page completed, moving to next...');
+            const movedToNext = await this.moveToNextPage();
+            
+            if (!movedToNext) {
+                console.log('🏁 [MAIN] All pages completed');
+                await this.displayFinalResults();
+                break;
+            }
+        }
+        
+        // ✅ انتظار قصير قبل المتابعة
+        await this.wait(2000);
+        
+    } catch (error) {
+        console.log('❌ [MAIN] Error processing page:', error);
+        await this.recoverFromError();
+    }
 
             } else if (pageType === 'jobDetails') {
                 console.log('📄 [MAIN] On job details page - attempting safe return...');
@@ -1038,12 +1123,20 @@ async runMainLoop() {
     async processJobListPage() {
         this.log('📋 [PAGE] معالجة صفحة قائمة الوظائف المُحسنة...');
 
-        await this.waitForPageLoad();
+await this.waitForPageLoad();
 
-// ✅ انتظار إضافي للتأكد من تحميل الوظائف
+// ✅ انتظار بسيط فقط
 await this.wait(2000);
 
 const jobCards = this.getAllJobCards();
+
+// ✅ التحقق من صحة العناصر قبل المعالجة
+const validCards = await this.validateJobCards(jobCards);
+if (validCards.length === 0) {
+    console.log('⚠️ [PAGE] No valid job cards found');
+    return false;
+}
+
 this.totalJobsOnPage = jobCards.length;
 
 if (jobCards.length === 0) {
@@ -1068,17 +1161,49 @@ if (jobCards.length === 0) {
 
         let qualityStats = { excellent: 0, good: 0, average: 0, poor: 0 };
 
-        for (let i = 0; i < jobCards.length && !this.shouldStop; i++) {
-            this.currentJobIndex = i + 1;
-            const progress = ((this.currentJobIndex) / jobCards.length) * 100;
-            chrome.runtime.sendMessage({ action: 'UPDATE_PROGRESS', progress: progress, text: `Processing job ${this.currentJobIndex} of ${jobCards.length}` });
+// معالجة كل وظيفة بالتسلسل مع إعادة البحث
+for (let i = 0; i < jobCards.length && !this.shouldStop; i++) {
+    this.currentJobIndex = i + 1;
+    const progress = ((this.currentJobIndex) / jobCards.length) * 100;
+    chrome.runtime.sendMessage({ action: 'UPDATE_PROGRESS', progress: progress, text: `Processing job ${this.currentJobIndex} of ${jobCards.length}` });
 
-            try {
-                const result = await this.processIndividualJob(jobCards[i], this.currentJobIndex, jobCards.length);
+    try {
+        // ✅ إعادة البحث عن العناصر قبل كل وظيفة
+        console.log(`🔄 [REFRESH] Refreshing job cards before job ${this.currentJobIndex}...`);
+        const refreshedJobCards = this.getAllJobCards();
+        
+        // التحقق من وجود العنصر المطلوب
+     let result = null; // ✅ تعريف result في البداية
 
-                if (result && result.quality) {
-                    qualityStats[result.quality.level] = (qualityStats[result.quality.level] || 0) + 1;
-                }
+if (refreshedJobCards[i] && refreshedJobCards[i].link) {
+    const element = refreshedJobCards[i].link;
+    
+    // التحقق من صحة العنصر
+    if (element.offsetWidth > 0 && element.offsetHeight > 0) {
+        console.log(`✅ [REFRESH] Job ${this.currentJobIndex} element is valid`);
+        result = await this.processIndividualJob(refreshedJobCards[i], this.currentJobIndex, jobCards.length);
+    } else {
+        console.log(`❌ [REFRESH] Job ${this.currentJobIndex} element is invalid - searching manually...`);
+        
+        // البحث اليدوي عن العنصر الصحيح
+        const validElement = await this.findValidJobElement(i);
+        if (validElement) {
+            console.log(`✅ [MANUAL] Found valid element for job ${this.currentJobIndex}`);
+            result = await this.processIndividualJob(validElement, this.currentJobIndex, jobCards.length);
+        } else {
+            console.log(`❌ [MANUAL] Could not find valid element for job ${this.currentJobIndex} - skipping`);
+            continue;
+        }
+    }
+} else {
+    console.log(`❌ [REFRESH] Job ${this.currentJobIndex} not found in refreshed cards - skipping`);
+    continue;
+}
+
+// ✅ الآن result مُعرّف في جميع الحالات
+if (result && result.quality) {
+    qualityStats[result.quality.level] = (qualityStats[result.quality.level] || 0) + 1;
+}
 
                 if (i < jobCards.length - 1) {
                     await this.smartDelay();
@@ -1945,16 +2070,19 @@ if (jobCards.length === 0) {
     // 🔄 التنقل والعودة المُحسنة
     // ========================
 
-    async returnToJobListSafely() {
-        console.log('🔙 [SAFE_RETURN] Starting safe return to list...');
+async returnToJobListSafely() {
+    console.log('🔙 [SAFE_RETURN] Starting safe return to list...');
 
-        try {
-            // Only safe attempt: history.back()
-            console.log('🔄 [SAFE_RETURN] Using history.back()...');
-            window.history.back();
+    try {
+        // Only safe attempt: history.back()
+        console.log('🔄 [SAFE_RETURN] Using history.back()...');
+        window.history.back();
 
-            // Wait for return
-            await this.wait(4000);
+        // ✅ انتظار أطول للاستقرار
+        await this.wait(6000);
+        
+        // ✅ انتظار إضافي لاستقرار DOM
+        await this.waitForPageStabilization();
 
             // Check if return succeeded
             const currentUrl = window.location.href;
@@ -1979,6 +2107,81 @@ if (jobCards.length === 0) {
         }
     }
 
+    async waitForPageStabilization() {
+    console.log('⏳ [STABILIZE] Waiting for page stabilization...');
+    
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    while (attempts < maxAttempts) {
+        attempts++;
+        console.log(`🔍 [STABILIZE] Check ${attempts}/${maxAttempts}`);
+        
+        await this.wait(1000);
+        
+        // فحص وجود عناصر الوظائف
+        const jobLinks = document.querySelectorAll('a[href*="JobDetails"]');
+        let visibleLinks = 0;
+        
+        for (const link of jobLinks) {
+            if (link.offsetWidth > 0 && link.offsetHeight > 0) {
+                visibleLinks++;
+            }
+        }
+        
+        console.log(`📊 [STABILIZE] Found ${visibleLinks} visible job links`);
+        
+        if (visibleLinks > 0) {
+            console.log('✅ [STABILIZE] Page is stable');
+            return true;
+        }
+    }
+    
+    console.log('⚠️ [STABILIZE] Stabilization timeout');
+    return false;
+}
+async validateJobCards(jobCards) {
+    console.log('🔍 [VALIDATE] Validating job cards...');
+    
+    const validCards = [];
+    
+    for (let i = 0; i < jobCards.length; i++) {
+        const card = jobCards[i];
+        
+        // فحص وجود العنصر
+        if (!card || !card.link) {
+            console.log(`❌ [VALIDATE] Card ${i + 1}: No link element`);
+            continue;
+        }
+        
+        // فحص الرؤية
+        const link = card.link;
+        if (link.offsetWidth === 0 || link.offsetHeight === 0) {
+            console.log(`❌ [VALIDATE] Card ${i + 1}: Not visible (${link.offsetWidth}x${link.offsetHeight})`);
+            continue;
+        }
+        
+        // فحص الموقع
+        const rect = link.getBoundingClientRect();
+        if (rect.top === 0 && rect.left === 0 && rect.width === 0) {
+            console.log(`❌ [VALIDATE] Card ${i + 1}: Invalid position`);
+            continue;
+        }
+        
+        // فحص النص
+        const text = link.textContent?.trim();
+        if (!text || text.length < 2) {
+            console.log(`❌ [VALIDATE] Card ${i + 1}: No valid text`);
+            continue;
+        }
+        
+        console.log(`✅ [VALIDATE] Card ${i + 1}: Valid - "${text.slice(0, 30)}..."`);
+        validCards.push(card);
+    }
+    
+    console.log(`📊 [VALIDATE] ${validCards.length}/${jobCards.length} cards are valid`);
+    return validCards;
+}
 async goBackToJobList() {
         this.log('🔙 [BACK] Returning to job list...');
 
